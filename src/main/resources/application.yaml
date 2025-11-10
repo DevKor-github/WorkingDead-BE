@@ -1,47 +1,58 @@
 spring:
   application:
     name: workingdead
+
+  datasource:
+    url: jdbc:postgresql://workingdead.cri4yyouailh.ap-northeast-2.rds.amazonaws.com:5432/workingdead?sslmode=require
+    username: postgres
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+
+  flyway:
+    enabled: false
+    # locations: classpath:db/migration
+
+  cloud:
+    aws:
+      region:
+        static: ap-northeast-2
+      credentials:
+        access-key: ${AWS_ACCESS_KEY_ID}
+        secret-key: ${AWS_SECRET_ACCESS_KEY}
+      s3:
+        bucket:    # ??: spring.cloud.aws.s3.bucket? ?? ?????? ?? app.s3.bucket ??
+        path-style-access-enabled: false
+
+  logging:
+    level:
+      org.springframework: INFO
+      org.springframework.security: DEBUG
+      org.hibernate.SQL: DEBUG
+      org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+      software.amazon.awssdk: INFO
+      com.uniConnect.member.security.oauth: DEBUG
+
   server:
     port: 8080
 
-datasource:
-  url: jdbc:postgresql://workingdead.cri4yyouailh.ap-northeast-2.rds.amazonaws.com:5432/workingdead?sslmode=require
-  username: postgres
-  password: ${DB_PASSWORD}
-  driver-class-name: org.postgresql.Driver
-
-jpa:
-  hibernate:
-    ddl-auto: update
-  show-sql: true
-  properties:
-    hibernate:
-      dialect: org.hibernate.dialect.PostgreSQLDialect
-      format_sql: true
-      jdbc:
-        time_zone: UTC
-  open-in-view: false
-
-flyway:
-  enabled: false
-  # locations: classpath:db/migration
-
-cloud:
-  aws:
-    region:
-      static: ap-northeast-2
-    credentials:
-      access-key: ${AWS_ACCESS_KEY_ID}
-      secret-key: ${AWS_SECRET_ACCESS_KEY}
-    s3:
-      bucket: uniconnect-250909   # ??: spring.cloud.aws.s3.bucket? ?? ?????? ?? app.s3.bucket ??
-      path-style-access-enabled: false
-
-logging:
-  level:
-    org.springframework: INFO
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    software.amazon.awssdk: INFO
-    com.uniConnect.member.security.oauth: DEBUG
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: always   # 부트가 Spring Session 스키마를 자동 생성
+      table-name: spring_session  # 기본값이라 생략 가능(소문자 권장)
+    sql:
+      init:
+        mode: always                # 외부 DB에서도 init 실행
+        platform: postgresql        # schema-@@platform@@.sql 매핑용
