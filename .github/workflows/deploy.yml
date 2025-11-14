@@ -52,7 +52,7 @@ jobs:
             fi
             
             echo "Finding latest JAR..."
-            JAR_PATH=$(ls -t /home/ubuntu/app/*.jar | head -n 1)
+            JAR_PATH=$(ls -t /home/ubuntu/app/build/libs/*.jar | head -n 1)
             echo "Using JAR: $JAR_PATH"
             
             echo "Export DB environment variable..."
