@@ -45,27 +45,11 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "Stopping existing application if running..."
-            if pgrep -f "java -jar"; then
-              pkill -f "java -jar"
-              sleep 5
-            fi
-            
-            echo "Finding latest JAR..."
-            JAR_PATH=$(ls -t /home/ubuntu/app/build/libs/*.jar | head -n 1)
-            echo "Using JAR: $JAR_PATH"
-            
-            echo "Export DB environment variable..."
-            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            cd /home/ubuntu/app
 
-            echo "Starting application..."
-            nohup java -jar "$JAR_PATH" \
-              > /home/ubuntu/app/app.log 2>&1 &
+            pkill -f "java -jar" || true
 
-            sleep 3
-            if pgrep -f "java -jar"; then
-              echo "Application started successfully."
-            else
-              echo "Application failed to start."
-              exit 1
-            fi
+            JAR_PATH=$(ls -t build/libs/*.jar | head -n 1)
+
+            nohup DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              java -jar "$JAR_PATH" > app.log 2>&1 &
