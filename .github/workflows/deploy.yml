@@ -33,8 +33,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "build/libs/*.jar"
-          target: "/home/ubuntu/app/app.jar"
+          source: "build/libs/*-SNAPSHOT.jar"
+          target: "/home/ubuntu/app"
           overwrite: true
 
       # 5) EC2에서 앱 재시작
@@ -46,10 +46,18 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ubuntu/app
-
-            pkill -f "java -jar app.jar" || true
+            
+            pkill -f "java -jar" || true
             sleep 5
 
+            JAR_PATH=$(ls -t build/libs/*-SNAPSHOT.jar | head -n 1)
+            echo "Using JAR: $JAR_PATH"
+
+            if [ -z "$JAR_PATH" ]; then
+              echo "No JAR found under build/libs"
+              exit 1
+            fi
+
             export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-  
-            nohup java -jar app.jar > app.log 2>&1 &
+
+            nohup java -jar "$JAR_PATH" > app.log 2>&1 &
