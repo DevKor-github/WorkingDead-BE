@@ -17,8 +17,15 @@ import java.util.List;
 @RestController
 @RequestMapping("/votes")
 public class VoteController {
-    private final VoteService voteService;
-    public VoteController(VoteService voteService) { this.voteService = voteService; }
+        private final VoteService voteService;
+        private final ParticipantRepository participantRepository;
+
+        public VoteController(VoteService voteService, ParticipantRepository participantRepository) {
+                this.voteService = voteService;
+                this.participantRepository = participantRepository;
+        }
+
+
 
     @Operation(
             summary = "투표 목록 조회",

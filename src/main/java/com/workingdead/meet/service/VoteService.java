@@ -99,7 +99,11 @@ public class VoteService {
 
 
     private VoteDtos.VoteDetail toDetail(Vote v) {
-        var participants = v.getParticipants().stream().map(p -> new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName())).toList();
+        // var participants = v.getParticipants().stream().map(p -> new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName())).toList();
+        var participants = v.getParticipants().stream()
+            .map(p -> new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName(), false))
+            .toList();
+
         return new VoteDtos.VoteDetail(v.getId(), v.getName(), v.getCode(), v.getStartDate(), v.getEndDate(), participants);
     }
 }

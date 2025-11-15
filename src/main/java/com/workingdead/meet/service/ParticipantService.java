@@ -6,10 +6,15 @@ import com.workingdead.meet.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-
 import java.security.SecureRandom;
 import java.util.NoSuchElementException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
+import java.time.LocalDateTime;
 
 @Service
 @Transactional
@@ -19,26 +24,142 @@ public class ParticipantService {
     private static final String CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
     private final SecureRandom rnd = new SecureRandom();
 
-
     public ParticipantService(ParticipantRepository participantRepo, VoteRepository voteRepo) {
-        this.participantRepo = participantRepo; this.voteRepo = voteRepo;
+        this.participantRepo = participantRepo; 
+        this.voteRepo = voteRepo;
     }
-
 
     public ParticipantDtos.ParticipantRes add(Long voteId, String displayName) {
-        Vote v = voteRepo.findById(voteId).orElseThrow(() -> new NoSuchElementException("vote not found"));
-        String loginCode = genCode(10);
+        Vote v = voteRepo.findById(voteId)
+                        .orElseThrow(() -> new NoSuchElementException("vote not found"));
         Participant p = new Participant(v, displayName);
         participantRepo.save(p);
-        return new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName());
+        return new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName(), false);
     }
 
+    @Transactional
+    public ParticipantDtos.ParticipantRes submit(Long participantId) {
+        Participant participant = participantRepo.findById(participantId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Participant not found"));
+
+        if (Boolean.TRUE.equals(participant.getSubmitted())) {
+            throw new IllegalStateException("이미 제출되었습니다.");
+        }
+
+        // markSubmitted() 대신 직접 설정
+        participant.setSubmitted(true);
+        participant.setSubmittedAt(LocalDateTime.now());
+
+        return new ParticipantDtos.ParticipantRes(
+                participant.getId(),
+                participant.getDisplayName(),
+                true
+        );
+    }
 
     public void remove(Long participantId) {
         participantRepo.deleteById(participantId);
     }
 
+    public List<ParticipantDtos.ParticipantRes> getParticipantsForVote(Long voteId) {
+        return participantRepo.findByVoteId(voteId).stream()
+                .map(p -> new ParticipantDtos.ParticipantRes(
+                        p.getId(),
+                        p.getDisplayName(),
+                        false 
+                ))
+                .collect(Collectors.toList());
+    }
 
+    public List<ParticipantDtos.ParticipantRes> getParticipantsForVote(Long voteId, Long currentParticipantId) {
+        return participantRepo.findByVoteId(voteId).stream()
+                .map(p -> new ParticipantDtos.ParticipantRes(
+                        p.getId(),
+                        p.getDisplayName(),
+                        p.getId().equals(currentParticipantId)
+                ))
+                .collect(Collectors.toList());
+    }
+
+    public ParticipantDtos.ParticipantScheduleRes submitSchedule(
+            Long participantId, 
+            ParticipantDtos.SubmitScheduleReq request) {
+        
+        // participantRepository -> participantRepo로 수정!
+        Participant participant = participantRepo.findById(participantId)
+                .orElseThrow(() -> new IllegalArgumentException("참가자를 찾을 수 없습니다."));
+        
+        Vote vote = participant.getVote();
+        
+        // 1. 기존 선택 및 우선순위 삭제
+        participant.getSelections().clear();
+        participant.getPriorities().clear();
+        
+        // 2. 새로운 선택 저장
+        for (ParticipantDtos.DateSlotReq dateSlot : request.schedules()) {
+            for (ParticipantDtos.SlotReq slot : dateSlot.slots()) {
+                ParticipantSelection selection = ParticipantSelection.builder()
+                        .participant(participant)
+                        .vote(vote)
+                        .date(dateSlot.date())
+                        .period(slot.period())
+                        .selected(slot.selected())
+                        .build();
+                participant.getSelections().add(selection);
+            }
+        }
+        
+        // 3. 우선순위 저장 (있는 경우)
+        if (request.priorities() != null && !request.priorities().isEmpty()) {
+            for (ParticipantDtos.PriorityReq priority : request.priorities()) {
+                PriorityPreference pref = PriorityPreference.builder()
+                        .participant(participant)
+                        .vote(vote)
+                        .date(priority.date())
+                        .period(priority.period())
+                        .priorityIndex(priority.priorityIndex())
+                        .weight(priority.weight())
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                participant.getPriorities().add(pref);
+            }
+        }
+        
+        // 4. 제출 정보 업데이트
+        participant.setSubmittedAt(LocalDateTime.now());
+        participant.setSubmitted(true);
+        
+        // participantRepository -> participantRepo로 수정!
+        Participant saved = participantRepo.save(participant);
+        
+        // 5. 응답 생성
+        List<ParticipantDtos.SelectionRes> selections = saved.getSelections().stream()
+                .map(s -> new ParticipantDtos.SelectionRes(
+                    s.getDate(), 
+                    s.getPeriod(), 
+                    s.isSelected()
+                ))
+                .toList();
+        
+        List<ParticipantDtos.PriorityRes> priorities = saved.getPriorities().stream()
+                .map(p -> new ParticipantDtos.PriorityRes(
+                    p.getDate(), 
+                    p.getPeriod(), 
+                    p.getPriorityIndex(), 
+                    p.getWeight()
+                ))
+                .toList();
+        
+        return new ParticipantDtos.ParticipantScheduleRes(
+                saved.getId(),
+                saved.getDisplayName(),
+                selections,
+                priorities,
+                saved.getSubmittedAt(),
+                saved.getSubmitted()
+        );
+    }
+    
     private String genCode(int len) {
         StringBuilder sb = new StringBuilder(len);
         for (int i=0;i<len;i++) sb.append(CODE_ALPHABET.charAt(rnd.nextInt(CODE_ALPHABET.length())));
