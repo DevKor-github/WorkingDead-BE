@@ -62,5 +62,36 @@ public class ParticipantDtos {
             int priorityIndex,
             double weight
     ) {}
+
+    /**
+     * 참여자의 선택 정보 조회 응답
+     */
+    public record ParticipantChoicesRes(
+            Long participantId,
+            String displayName,
+            List<SelectionInfo> selections,
+            List<PriorityInfo> priorities
+    ) {}
+
+    /**
+     * 일정 선택 정보
+     */
+    public record SelectionInfo(
+            Long id,
+            String date,
+            String period,
+            boolean selected
+    ) {}
+
+    /**
+     * 우선순위 정보
+     */
+    public record PriorityInfo(
+            Long id,
+            String date,
+            String period,
+            Integer priorityIndex,
+            Double weight
+    ) {}
 }
 

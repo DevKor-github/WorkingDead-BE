@@ -158,4 +158,23 @@ public ResponseEntity<ParticipantDtos.ParticipantRes> updateParticipant(
             participantService.submitSchedule(participantId, request);
         return ResponseEntity.ok(response);
     }
+
+    @Operation(
+            summary = "참여자의 선택 정보 조회",
+            description = "특정 참여자가 선택한 일정과 우선순위를 조회합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공",
+                    content = @Content(schema = @Schema(implementation = ParticipantDtos.ParticipantChoicesRes.class))),
+            @ApiResponse(responseCode = "404", description = "참여자를 찾을 수 없음", content = @Content)
+    })
+    @GetMapping("/participants/{participantId}/choices")
+    public ResponseEntity<ParticipantDtos.ParticipantChoicesRes> getParticipantChoices(
+            @PathVariable Long participantId) {
+
+        ParticipantDtos.ParticipantChoicesRes response =
+                participantService.getParticipantChoices(participantId);
+
+        return ResponseEntity.ok(response);
+    }
 }

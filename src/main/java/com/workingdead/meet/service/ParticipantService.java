@@ -165,4 +165,43 @@ public class ParticipantService {
         for (int i=0;i<len;i++) sb.append(CODE_ALPHABET.charAt(rnd.nextInt(CODE_ALPHABET.length())));
         return sb.toString();
     }
+
+    /**
+     * 특정 참여자의 선택한 일정과 우선순위 조회 (participantId만 사용)
+     */
+    public ParticipantDtos.ParticipantChoicesRes getParticipantChoices(Long participantId) {
+
+        // 참여자 존재 확인 및 조회
+        Participant participant = participantRepo.findById(participantId)
+                .orElseThrow(() -> new RuntimeException("Participant not found"));
+
+        // 일정 선택 정보 조회 (엔티티 관계 활용)
+        List<ParticipantDtos.SelectionInfo> selectionInfos = participant.getSelections().stream()
+                .map(s -> new ParticipantDtos.SelectionInfo(
+                        s.getId(),
+                        s.getDate().toString(),
+                        s.getPeriod(),
+                        s.isSelected()
+                ))
+                .toList();
+
+        // 우선순위 정보 조회 (엔티티 관계 활용)
+        List<ParticipantDtos.PriorityInfo> priorityInfos = participant.getPriorities().stream()
+                .map(p -> new ParticipantDtos.PriorityInfo(
+                        p.getId(),
+                        p.getDate().toString(),
+                        p.getPeriod(),
+                        p.getPriorityIndex(),
+                        p.getWeight()
+                ))
+                .sorted((p1, p2) -> p1.priorityIndex().compareTo(p2.priorityIndex()))
+                .toList();
+
+        return new ParticipantDtos.ParticipantChoicesRes(
+                participant.getId(),
+                participant.getDisplayName(),
+                selectionInfos,
+                priorityInfos
+        );
+    }
 }
