@@ -1,0 +1,73 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - chore/#4
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) 코드 가져오기
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) JDK 설정
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      # 3) Gradle 빌드
+      - name: Build with Gradle
+        run: chmod +x ./gradlew && ./gradlew bootjar
+
+      # 4) JAR를 EC2로 복사
+      - name: Copy jar to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "build/libs/*-SNAPSHOT.jar"
+          target: "/home/ubuntu/app"
+          overwrite: true
+
+      # 5) EC2에서 앱 재시작
+      - name: Restart Spring Boot app on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/app
+
+            echo "[deploy] stop old app"
+            if [ -f app.pid ]; then
+              PID=$(cat app.pid)
+              if ps -p "$PID" > /dev/null 2>&1; then
+                kill "$PID" || true
+                sleep 5
+              fi
+              rm app.pid
+            fi
+          
+            echo "[deploy] start new app"
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              nohup java -jar build/libs/workingdead-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+          
+            echo $! > app.pid
+          
+            sleep 5
+            if ps -p "$(cat app.pid)" > /dev/null 2>&1; then
+              echo "[deploy] Application started successfully"
+            else
+              echo "[deploy] Application failed to start"
+              tail -n 80 app.log || true
+              exit 1
+            fi
