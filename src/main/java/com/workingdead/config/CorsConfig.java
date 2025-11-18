@@ -18,7 +18,8 @@ public class CorsConfig {
                 "http://10.0.2.2:8080",
                 "http://localhost:5173",
                 "http://whend.app",
-                "https://whend.app"
+                "https://whend.app",
+                "https://whendy.netlify.app"
         ));
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
