@@ -22,7 +22,7 @@ public class VoteService {
     private final SecureRandom rnd = new SecureRandom();
 
 
-    public VoteService(VoteRepository voteRepo, @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
+    public VoteService(VoteRepository voteRepo, @Value("${app.base-url:http://whendy.netlify.app}") String baseUrl) {
         this.voteRepo = voteRepo; this.baseUrl = baseUrl;
     }
 
@@ -105,7 +105,6 @@ public class VoteService {
 
 
     private VoteDtos.VoteDetail toDetail(Vote v) {
-        // var participants = v.getParticipants().stream().map(p -> new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName())).toList();
         var participants = v.getParticipants().stream()
             .map(p -> new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName(), false))
             .toList();
