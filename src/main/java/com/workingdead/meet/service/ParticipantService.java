@@ -149,6 +149,7 @@ public class ParticipantService {
         
         // participantRepository -> participantRepo로 수정!
         Participant saved = participantRepo.save(participant);
+        participantRepo.flush();
         
         // 5. 응답 생성
         List<ParticipantDtos.SelectionRes> selections = saved.getSelections().stream()

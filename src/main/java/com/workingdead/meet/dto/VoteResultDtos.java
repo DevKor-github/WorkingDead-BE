@@ -14,13 +14,13 @@ public class VoteResultDtos {
     
     // 순위별 정보
     public record RankingRes(
-            int rank,                    // 순위 (1, 2, 3)
-            LocalDate date,              // 날짜
-            String period,               // "LUNCH" or "DINNER"
-            int voteCount,               // 투표 인원 수
-            double priorityScore,        // 우선순위 가중치 합계
-            List<VoterDetailRes> voters  // 투표자 상세 (드롭다운용)
-    ) {}
+        Integer rank,                // 순위 (1, 2, 3, null) - null이면 4위 이하
+        LocalDate date,
+        String period,
+        int voteCount,
+        double priorityScore,
+        List<VoterDetailRes> voters
+        ) {}
     
     // 투표자 상세 정보
     public record VoterDetailRes(
