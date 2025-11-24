@@ -21,12 +21,21 @@ import java.time.LocalDateTime;
 public class ParticipantService {
     private final ParticipantRepository participantRepo;
     private final VoteRepository voteRepo;
+    private final ParticipantSelectionRepository selectionRepo;      // 추가!
+    private final PriorityPreferenceRepository priorityRepo;         // 추가!
     private static final String CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
     private final SecureRandom rnd = new SecureRandom();
 
-    public ParticipantService(ParticipantRepository participantRepo, VoteRepository voteRepo) {
+    // 생성자 수정
+    public ParticipantService(
+            ParticipantRepository participantRepo, 
+            VoteRepository voteRepo,
+            ParticipantSelectionRepository selectionRepo,            // 추가!
+            PriorityPreferenceRepository priorityRepo) {             // 추가!
         this.participantRepo = participantRepo; 
         this.voteRepo = voteRepo;
+        this.selectionRepo = selectionRepo;                          // 추가!
+        this.priorityRepo = priorityRepo;                            // 추가!
     }
 
     public ParticipantDtos.ParticipantRes add(Long voteId, String displayName) {
@@ -103,17 +112,21 @@ public class ParticipantService {
             Long participantId, 
             ParticipantDtos.SubmitScheduleReq request) {
         
-        // participantRepository -> participantRepo로 수정!
         Participant participant = participantRepo.findById(participantId)
                 .orElseThrow(() -> new IllegalArgumentException("참가자를 찾을 수 없습니다."));
         
         Vote vote = participant.getVote();
         
-        // 1. 기존 선택 및 우선순위 삭제
+        // 1. 기존 데이터 명시적으로 삭제 (Repository 사용) - 수정!
+        selectionRepo.deleteByParticipantId(participantId);
+        priorityRepo.deleteByParticipantId(participantId);
+        selectionRepo.flush();  // DB에 즉시 반영!
+        
+        // 2. 컬렉션 비우기
         participant.getSelections().clear();
         participant.getPriorities().clear();
         
-        // 2. 새로운 선택 저장
+        // 3. 새로운 선택 저장
         for (ParticipantDtos.DateSlotReq dateSlot : request.schedules()) {
             for (ParticipantDtos.SlotReq slot : dateSlot.slots()) {
                 ParticipantSelection selection = ParticipantSelection.builder()
@@ -127,7 +140,7 @@ public class ParticipantService {
             }
         }
         
-        // 3. 우선순위 저장 (있는 경우)
+        // 4. 우선순위 저장 (있는 경우)
         if (request.priorities() != null && !request.priorities().isEmpty()) {
             for (ParticipantDtos.PriorityReq priority : request.priorities()) {
                 PriorityPreference pref = PriorityPreference.builder()
@@ -143,15 +156,14 @@ public class ParticipantService {
             }
         }
         
-        // 4. 제출 정보 업데이트
+        // 5. 제출 정보 업데이트
         participant.setSubmittedAt(LocalDateTime.now());
         participant.setSubmitted(true);
         
-        // participantRepository -> participantRepo로 수정!
         Participant saved = participantRepo.save(participant);
         participantRepo.flush();
         
-        // 5. 응답 생성
+        // 6. 응답 생성
         List<ParticipantDtos.SelectionRes> selections = saved.getSelections().stream()
                 .map(s -> new ParticipantDtos.SelectionRes(
                     s.getDate(), 
@@ -223,6 +235,4 @@ public class ParticipantService {
                 priorityInfos
         );
     }
-
-
 }
