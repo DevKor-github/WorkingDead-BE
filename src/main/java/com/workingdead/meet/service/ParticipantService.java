@@ -64,6 +64,16 @@ public class ParticipantService {
         );
     }
 
+    public List<ParticipantDtos.ParticipantStatusRes> getParticipantStatusByVoteId(Long voteId) {
+        return participantRepo.findByVoteId(voteId).stream()
+                .map(p -> new ParticipantDtos.ParticipantStatusRes(
+                        p.getId(),
+                        p.getDisplayName(),
+                        Boolean.TRUE.equals(p.getSubmitted())
+                ))
+                .toList();
+    }
+
     @Transactional
     public ParticipantDtos.ParticipantRes submit(Long participantId) {
         Participant participant = participantRepo.findById(participantId)

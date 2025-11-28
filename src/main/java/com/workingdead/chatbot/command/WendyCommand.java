@@ -1,13 +1,17 @@
 package com.workingdead.chatbot.command;
 
 import com.workingdead.chatbot.scheduler.WendyScheduler;
-import com.workingdead.meet.service.WendyService;
+import com.workingdead.chatbot.service.WendyService;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.entities.emoji.Emoji;
+import net.dv8tion.jda.api.events.interaction.component.EntitySelectInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.message.react.MessageReactionAddEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.components.selections.EntitySelectMenu;
+import net.dv8tion.jda.api.interactions.components.selections.StringSelectMenu;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -22,6 +26,10 @@ public class WendyCommand extends ListenerAdapter {
     
     private final Map<String, String> participantCheckMessages = new ConcurrentHashMap<>();
     private final Map<String, Boolean> waitingForDateInput = new ConcurrentHashMap<>();
+
+    private static final String ATTENDEE_SELECT_MENU_ID = "wendy-attendees";
+    private static final String WEEK_SELECT_MENU_ID = "wendy-weeks";
+    private static final String WEEK_SELECT_MENU_REVOTE_ID = "wendy-weeks-revote";
     
     public WendyCommand(WendyService wendyService, WendyScheduler wendyScheduler) {
         this.wendyService = wendyService;
@@ -54,14 +62,14 @@ public class WendyCommand extends ListenerAdapter {
             return;
         }
         
-        // 2.1~2.2 날짜 범위 입력
-        if (waitingForDateInput.getOrDefault(channelId, false)) {
-            Integer weeks = extractWeeks(content);
-            if (weeks != null) {
-                handleDateInput(channel, member, weeks, false);
-                return;
-            }
-        }
+//        // 2.1~2.2 날짜 범위 입력
+//        if (waitingForDateInput.getOrDefault(channelId, false)) {
+//            Integer weeks = extractWeeks(content);
+//            if (weeks != null) {
+//                handleDateInput(channel, member, weeks, false);
+//                return;
+//            }
+//        }
         
         // 4.2 재투표
         if (content.equals("웬디 재투표")) {
@@ -75,30 +83,84 @@ public class WendyCommand extends ListenerAdapter {
             return;
         }
     }
-    
+
     @Override
-    public void onMessageReactionAdd(MessageReactionAddEvent event) {
-        if (event.getUser() != null && event.getUser().isBot()) return;
-        
+    public void onEntitySelectInteraction(EntitySelectInteractionEvent event) {
+        if (!ATTENDEE_SELECT_MENU_ID.equals(event.getComponentId())) {
+            return;
+        }
+
         String channelId = event.getChannel().getId();
-        String messageId = event.getMessageId();
-        
-        String checkMessageId = participantCheckMessages.get(channelId);
-        if (checkMessageId == null || !checkMessageId.equals(messageId)) {
+        if (!wendyService.isSessionActive(channelId)) {
             return;
         }
-        
-        if (!event.getReaction().getEmoji().equals(Emoji.fromUnicode("✅"))) {
-            return;
-        }
-        
-        event.retrieveMember().queue(member -> {
-            if (member != null) {
-                wendyService.addParticipant(channelId, member.getId(), member.getEffectiveName());
-                System.out.println("[Command] Participant added: " + member.getEffectiveName());
-            }
+
+        event.getMentions().getMembers().forEach(member -> {
+            wendyService.addParticipant(channelId, member.getId(), member.getEffectiveName());
+            System.out.println("[Command] Participant added via select menu: " + member.getEffectiveName());
         });
+
+        event.reply("참석자 명단이 업데이트됐어요!").setEphemeral(true).queue();
+
     }
+
+    @Override
+    public void onStringSelectInteraction(StringSelectInteractionEvent event) {
+        String componentId = event.getComponentId();
+        if (!WEEK_SELECT_MENU_ID.equals(componentId) && !WEEK_SELECT_MENU_REVOTE_ID.equals(componentId)) {
+            return;
+        }
+
+        String channelId = event.getChannel().getId();
+        if (!wendyService.isSessionActive(channelId)) {
+            return;
+        }
+
+        // 하나만 선택하게 설정할 예정이므로 첫 번째 값만 사용
+        String value = event.getValues().get(0);
+        int weeks;
+        try {
+            weeks = Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            event.reply("선택한 값이 올바르지 않아요. 다시 시도해주세요!").setEphemeral(true).queue();
+            return;
+        }
+
+        TextChannel channel = event.getChannel().asTextChannel();
+        Member member = event.getMember();
+        if (member == null) {
+            event.reply("사용자 정보를 가져올 수 없어요. 다시 시도해주세요!").setEphemeral(true).queue();
+            return;
+        }
+
+        boolean isRevote = WEEK_SELECT_MENU_REVOTE_ID.equals(componentId);
+        handleDateInput(channel, member, weeks, isRevote);
+        event.reply("투표 날짜 범위를 선택하셨어요!").setEphemeral(true).queue();
+    }
+
+//    @Override
+//    public void onMessageReactionAdd(MessageReactionAddEvent event) {
+//        if (event.getUser() != null && event.getUser().isBot()) return;
+//
+//        String channelId = event.getChannel().getId();
+//        String messageId = event.getMessageId();
+//
+//        String checkMessageId = participantCheckMessages.get(channelId);
+//        if (checkMessageId == null || !checkMessageId.equals(messageId)) {
+//            return;
+//        }
+//
+//        if (!event.getReaction().getEmoji().equals(Emoji.fromUnicode("✅"))) {
+//            return;
+//        }
+//
+//        event.retrieveMember().queue(member -> {
+//            if (member != null) {
+//                wendyService.addParticipant(channelId, member.getId(), member.getEffectiveName());
+//                System.out.println("[Command] Participant added: " + member.getEffectiveName());
+//            }
+//        });
+//    }
     
     private void handleStart(TextChannel channel) {
         String channelId = channel.getId();
@@ -110,32 +172,50 @@ public class WendyCommand extends ListenerAdapter {
             안녕하세요! 일정 조율 도우미 웬디에요 :D
             지금부터 여러분의 일정 조율을 도와드릴게요
             """).queue();
-        
-        channel.sendMessage("인원 파악을 위해 참석자분들은 ✅를 남겨주세요!")
-            .queue(message -> {
-                participantCheckMessages.put(channelId, message.getId());
-                message.addReaction(Emoji.fromUnicode("✅")).queue();
-                System.out.println("[Command] Session started: " + channelId);
-            });
-        
-        channel.sendMessage("몇 주 뒤의 일정을 계획하시나요? :D\n(ex. 2주 뒤)").queue();
-        waitingForDateInput.put(channelId, true);
+
+
+        // 참석자 입력용 엔티티 셀렉트 메뉴 (유저 선택 드롭다운)
+        EntitySelectMenu attendeeMenu = EntitySelectMenu.create(ATTENDEE_SELECT_MENU_ID, EntitySelectMenu.SelectTarget.USER)
+                .setPlaceholder("참석자분들을 선택하거나 검색해서 골라주세요")
+                .setRequiredRange(1, 25)
+                .build();
+
+        channel.sendMessage("인원 파악을 위해 참석자분들을 알려주세요!\n원하는 참석자들을 아래 드롭다운에서 선택해주세요.")
+                .setActionRow(attendeeMenu)
+                .queue();
+
+        // 2.1 날짜 범위 파악 질문 (드롭다운 방식)
+        StringSelectMenu weekMenu = StringSelectMenu.create(WEEK_SELECT_MENU_ID)
+                .setPlaceholder("몇 주 뒤의 일정을 계획하시나요?")
+                .addOption("이번 주", "0")
+                .addOption("1주 뒤", "1")
+                .addOption("2주 뒤", "2")
+                .addOption("3주 뒤", "3")
+                .addOption("4주 뒤", "4")
+                .addOption("5주 뒤", "5")
+                .addOption("6주 뒤", "6")
+                .build();
+
+        channel.sendMessage("몇 주 뒤의 일정을 계획하시나요? :D")
+                .setActionRow(weekMenu)
+                .queue();
     }
     
     private void handleDateInput(TextChannel channel, Member member, int weeks, boolean isRevote) {
         String channelId = channel.getId();
-        String userName = member.getEffectiveName();
+        String userMention = member.getAsMention();
+        String channelName = channel.getName();
         
         waitingForDateInput.put(channelId, false);
         
-        channel.sendMessage(userName + " 님이 " + weeks + "주 뒤를 선택하셨어요!").queue();
+        channel.sendMessage(userMention + " 님이 " + weeks + "주 뒤를 선택하셨어요!").queue();
         channel.sendMessage("해당 일정의 투표를 만들어드릴게요 :D").queue();
         channel.sendMessage("(투표 늦게 하는 사람 대머리🧑‍🦲)").queue();
         channel.sendMessage("투표를 생성 중입니다🛜").queue();
         
         String voteUrl = isRevote 
-            ? wendyService.recreateVote(channelId, weeks)
-            : wendyService.createVote(channelId, weeks);
+            ? wendyService.recreateVote(channelId, channelName, weeks)
+            : wendyService.createVote(channelId, channelName, weeks);
         
         channel.sendMessage(voteUrl).queue();
         wendyScheduler.startSchedule(channel);
@@ -150,8 +230,22 @@ public class WendyCommand extends ListenerAdapter {
         }
         
         wendyScheduler.stopSchedule(channelId);
-        channel.sendMessage("몇 주 뒤의 일정을 계획하시나요? :D\n(ex. 2주 뒤)").queue();
-        waitingForDateInput.put(channelId, true);
+
+
+        StringSelectMenu weekMenu = StringSelectMenu.create(WEEK_SELECT_MENU_REVOTE_ID)
+                .setPlaceholder("몇 주 뒤의 일정을 다시 계획하시나요?")
+                .addOption("이번 주", "0")
+                .addOption("1주 뒤", "1")
+                .addOption("2주 뒤", "2")
+                .addOption("3주 뒤", "3")
+                .addOption("4주 뒤", "4")
+                .addOption("5주 뒤", "5")
+                .addOption("6주 뒤", "6")
+                .build();
+
+        channel.sendMessage("몇 주 뒤의 일정을 계획하시나요? :D")
+                .setActionRow(weekMenu)
+                .queue();
     }
     
     private void handleEnd(TextChannel channel) {
