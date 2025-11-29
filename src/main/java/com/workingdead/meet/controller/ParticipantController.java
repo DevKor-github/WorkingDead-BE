@@ -1,5 +1,6 @@
 package com.workingdead.meet.controller;
 
+import com.workingdead.meet.application.VoteApplicationService;
 import com.workingdead.meet.dto.*;
 import com.workingdead.meet.entity.*;
 import com.workingdead.meet.repository.*;
@@ -26,14 +27,17 @@ public class ParticipantController {
     private final ParticipantService participantService;
     private final PriorityService priorityService;
     private final ParticipantRepository participantRepository;
+    private final VoteApplicationService voteApplicationService;
 
     public ParticipantController(
             ParticipantService participantService, 
             PriorityService priorityService,
-            ParticipantRepository participantRepository) { 
+            ParticipantRepository participantRepository,
+            VoteApplicationService voteApplicationService) {
         this.participantService = participantService; 
         this.priorityService = priorityService;
         this.participantRepository = participantRepository;
+        this.voteApplicationService = voteApplicationService;
     }
 
     // 0.2 참여자 추가/삭제
@@ -174,7 +178,7 @@ public ResponseEntity<ParticipantDtos.ParticipantRes> updateParticipant(
             @Valid @RequestBody ParticipantDtos.SubmitScheduleReq request) {
         
         ParticipantDtos.ParticipantScheduleRes response = 
-            participantService.submitSchedule(participantId, request);
+            voteApplicationService.submitSchedule(participantId, request);
         return ResponseEntity.ok(response);
     }
 

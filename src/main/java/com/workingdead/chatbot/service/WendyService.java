@@ -15,14 +15,14 @@ public interface WendyService {
     
     String createVote(String channelId, String channelName, int weeks);
     VoteResultRes getVoteStatus(String channelId);
-    boolean hasNewVoter(String channelId);
     List<String> getNonVoterIds(String channelId);
 
     String getShareUrl(String channelId);
-    
     boolean hasPreviousVote(String channelId);
     String recreateVote(String channelId, String channelName, int weeks);
 
     String getVoteDeadline(String channelId);
     String getTopRankedDateTime(String channelId);
+
+    String getChannelIdByVoteId(Long voteId);
 }

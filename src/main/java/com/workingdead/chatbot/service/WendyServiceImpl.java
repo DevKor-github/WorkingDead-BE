@@ -30,7 +30,6 @@ public class WendyServiceImpl implements WendyService {
     private final VoteService voteService;
     private final ParticipantService participantService;
     private final VoteResultService voteResultService;
-    private final VoteDateRangeService voteDateRangeService;
 
     // 활성 세션 관리 (channelId 기반)
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
@@ -50,7 +49,7 @@ public class WendyServiceImpl implements WendyService {
     // 투표 생성 시각 및 기준 주차
     private final Map<String, LocalDateTime> voteCreatedAt = new ConcurrentHashMap<>();
     private final Map<String, Integer> voteWeeks = new ConcurrentHashMap<>();
-    
+
     @Override
     public void startSession(String channelId, List<Member> members) {
         activeSessions.add(channelId);
@@ -194,12 +193,6 @@ public class WendyServiceImpl implements WendyService {
 
         return voteResultService.getVoteResult(voteId);
     }
-    
-    @Override
-    public boolean hasNewVoter(String channelId) {
-        // 사용 안함
-        return false;
-    }
 
     @Override
     public List<String> getNonVoterIds(String channelId) {
@@ -303,6 +296,14 @@ public class WendyServiceImpl implements WendyService {
                 + periodLabel;
     }
 
-
+    @Override
+    public String getChannelIdByVoteId(Long voteId) {
+        for (Map.Entry<String, Long> entry : channelVoteId.entrySet()) {
+            if (entry.getValue().equals(voteId)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
 
 }

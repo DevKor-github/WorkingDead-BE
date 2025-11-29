@@ -3,6 +3,7 @@ package com.workingdead.meet.service;
 import com.workingdead.meet.dto.*;
 import com.workingdead.meet.entity.*;
 import com.workingdead.meet.repository.*;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -244,5 +245,11 @@ public class ParticipantService {
                 selectionInfos,
                 priorityInfos
         );
+    }
+
+    public Long getVoteIdByParticipantId(Long participantId) {
+        Participant participant = participantRepo.findById(participantId)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid participant ID"));
+        return participant.getVote().getId();
     }
 }
