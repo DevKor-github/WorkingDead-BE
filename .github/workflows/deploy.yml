@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - chore/#4
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -58,8 +57,11 @@ jobs:
             fi
           
             echo "[deploy] start new app"
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              nohup java -jar build/libs/workingdead-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+            
+            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            export DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}'
+            
+            nohup java -jar build/libs/workingdead-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
           
             echo $! > app.pid
           
