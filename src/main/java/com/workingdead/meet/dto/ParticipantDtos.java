@@ -12,6 +12,14 @@ public class ParticipantDtos {
     public record ParticipantRes(Long id, String displayName,boolean loggedIn // 로그인 상태
         ) {}
 
+    // 단순 상태 조회용 DTO (투표 여부 판단 전용)
+    public record ParticipantStatusRes(
+            Long id,
+            String displayName,
+            boolean submitted
+    ) {}
+
+
     // 일정 제출 요청
     public record SubmitScheduleReq(
             @NotEmpty(message = "최소 1개 이상의 날짜를 선택해주세요")
