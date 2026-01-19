@@ -67,3 +67,8 @@ springdoc:
 
 discord:
   token: ${DISCORD_TOKEN}
+
+kakao:
+  rest-api-key: ${KAKAO_REST_API_KEY:f674ae4dedf0daa41c4ec632d76ebac0}
+  admin-key: ${KAKAO_ADMIN_KEY:}
+  channel-id: ${KAKAO_CHANNEL_ID:}
