@@ -32,7 +32,7 @@ spring:
         access-key: ${AWS_ACCESS_KEY_ID}
         secret-key: ${AWS_SECRET_ACCESS_KEY}
       s3:
-        bucket:    # ??: spring.cloud.aws.s3.bucket? ?? ?????? ?? app.s3.bucket ??
+        bucket:    # spring.cloud.aws.s3.bucket
         path-style-access-enabled: false
 
   logging:

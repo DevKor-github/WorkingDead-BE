@@ -125,7 +125,7 @@ public class WendyServiceImpl implements WendyService {
                     + (removedName != null ? removedName : memberId)
                     + " (discordId=" + memberId + ")");
         } else {
-            // 현재는 디스코드 쪽 참석자 목록에서만 제rㅓ
+            // 현재는 디스코드 쪽 참석자 목록에서만 제거
             System.out.println("[When:D] Participant removed AFTER vote (domain not deleted): "
                     + (removedName != null ? removedName : memberId)
                     + " (discordId=" + memberId + ")");
