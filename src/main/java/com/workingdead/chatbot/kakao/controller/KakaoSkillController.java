@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
  * 카카오 i 오픈빌더 스킬 서버 컨트롤러
  *
  * 카카오톡 챗봇에서 발화를 받아 처리하고 응답을 반환합니다.
+ * - 개인챗: userKey 기반 세션
+ * - 그룹챗: botGroupKey 기반 세션
  */
 @Tag(name = "Kakao Chatbot", description = "카카오 챗봇 스킬 API")
 @RestController
@@ -28,16 +30,30 @@ public class KakaoSkillController {
     private final KakaoWendyScheduler kakaoWendyScheduler;
 
     /**
+     * 세션 키 결정 (그룹챗이면 botGroupKey, 개인챗이면 userKey)
+     */
+    private String getSessionKey(KakaoRequest request) {
+        String botGroupKey = request.getBotGroupKey();
+        if (botGroupKey != null && !botGroupKey.isBlank()) {
+            return botGroupKey;
+        }
+        return request.getUserKey();
+    }
+
+    /**
      * 메인 스킬 엔드포인트 (폴백 블록)
      * 모든 발화를 여기서 처리
      */
     @Operation(summary = "메인 스킬 (폴백)")
     @PostMapping("/main")
     public ResponseEntity<KakaoResponse> handleMain(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
+        String sessionKey = getSessionKey(request);
+        String botGroupKey = request.getBotGroupKey();
+        String botUserKey = request.getBotUserKey();
         String utterance = request.getUtterance();
 
-        log.info("[Kakao Skill] userKey={}, utterance={}", userKey, utterance);
+        log.info("[Kakao Skill] sessionKey={}, botGroupKey={}, botUserKey={}, utterance={}",
+                sessionKey, botGroupKey, botUserKey, utterance);
 
         if (utterance == null || utterance.isBlank()) {
             return ResponseEntity.ok(kakaoWendyService.help());
@@ -47,7 +63,7 @@ public class KakaoSkillController {
 
         // 1. 웬디 시작
         if (trimmed.equals("웬디 시작") || trimmed.equals("시작")) {
-            return ResponseEntity.ok(kakaoWendyService.startSession(userKey));
+            return ResponseEntity.ok(kakaoWendyService.startSession(sessionKey, botGroupKey));
         }
 
         // 2. 도움말
@@ -57,34 +73,34 @@ public class KakaoSkillController {
 
         // 3. 웬디 종료
         if (trimmed.equals("웬디 종료") || trimmed.equals("종료")) {
-            kakaoWendyScheduler.stopSchedule(userKey);
-            return ResponseEntity.ok(kakaoWendyService.endSession(userKey));
+            kakaoWendyScheduler.stopSchedule(sessionKey);
+            return ResponseEntity.ok(kakaoWendyService.endSession(sessionKey));
         }
 
         // 4. 웬디 결과
         if (trimmed.equals("웬디 결과") || trimmed.equals("결과") || trimmed.equals("결과 확인")) {
-            return ResponseEntity.ok(kakaoWendyService.getVoteResult(userKey));
+            return ResponseEntity.ok(kakaoWendyService.getVoteResult(sessionKey));
         }
 
         // 5. 웬디 재투표
         if (trimmed.equals("웬디 재투표") || trimmed.equals("재투표")) {
-            return ResponseEntity.ok(kakaoWendyService.revote(userKey));
+            return ResponseEntity.ok(kakaoWendyService.revote(sessionKey));
         }
 
         // 세션 상태에 따른 처리
-        SessionState state = kakaoWendyService.getSessionState(userKey);
+        SessionState state = kakaoWendyService.getSessionState(sessionKey);
 
         switch (state) {
             case WAITING_PARTICIPANTS:
                 // 참석자 이름 입력
-                return ResponseEntity.ok(kakaoWendyService.addParticipants(userKey, trimmed));
+                return ResponseEntity.ok(kakaoWendyService.addParticipants(sessionKey, trimmed));
 
             case WAITING_WEEKS:
                 // 주차 선택
                 Integer weeks = kakaoWendyService.parseWeeks(trimmed);
                 if (weeks != null) {
-                    KakaoResponse response = kakaoWendyService.createVote(userKey, weeks);
-                    kakaoWendyScheduler.startSchedule(userKey);
+                    KakaoResponse response = kakaoWendyService.createVote(sessionKey, weeks, botGroupKey);
+                    kakaoWendyScheduler.startSchedule(sessionKey);
                     return ResponseEntity.ok(response);
                 }
                 break;
@@ -94,7 +110,7 @@ public class KakaoSkillController {
         }
 
         // 알 수 없는 입력
-        return ResponseEntity.ok(kakaoWendyService.unknownInput(userKey));
+        return ResponseEntity.ok(kakaoWendyService.unknownInput(sessionKey));
     }
 
     /**
@@ -103,9 +119,10 @@ public class KakaoSkillController {
     @Operation(summary = "웬디 시작")
     @PostMapping("/start")
     public ResponseEntity<KakaoResponse> handleStart(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
-        log.info("[Kakao Skill] START - userKey={}", userKey);
-        return ResponseEntity.ok(kakaoWendyService.startSession(userKey));
+        String sessionKey = getSessionKey(request);
+        String botGroupKey = request.getBotGroupKey();
+        log.info("[Kakao Skill] START - sessionKey={}, botGroupKey={}", sessionKey, botGroupKey);
+        return ResponseEntity.ok(kakaoWendyService.startSession(sessionKey, botGroupKey));
     }
 
     /**
@@ -114,10 +131,10 @@ public class KakaoSkillController {
     @Operation(summary = "웬디 종료")
     @PostMapping("/end")
     public ResponseEntity<KakaoResponse> handleEnd(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
-        log.info("[Kakao Skill] END - userKey={}", userKey);
-        kakaoWendyScheduler.stopSchedule(userKey);
-        return ResponseEntity.ok(kakaoWendyService.endSession(userKey));
+        String sessionKey = getSessionKey(request);
+        log.info("[Kakao Skill] END - sessionKey={}", sessionKey);
+        kakaoWendyScheduler.stopSchedule(sessionKey);
+        return ResponseEntity.ok(kakaoWendyService.endSession(sessionKey));
     }
 
     /**
@@ -127,10 +144,11 @@ public class KakaoSkillController {
     @Operation(summary = "주차 선택")
     @PostMapping("/select-week")
     public ResponseEntity<KakaoResponse> handleSelectWeek(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
+        String sessionKey = getSessionKey(request);
+        String botGroupKey = request.getBotGroupKey();
         String weeksParam = request.getParam("weeks");
 
-        log.info("[Kakao Skill] SELECT_WEEK - userKey={}, weeks={}", userKey, weeksParam);
+        log.info("[Kakao Skill] SELECT_WEEK - sessionKey={}, weeks={}", sessionKey, weeksParam);
 
         int weeks = 0;
         if (weeksParam != null) {
@@ -142,8 +160,8 @@ public class KakaoSkillController {
             }
         }
 
-        KakaoResponse response = kakaoWendyService.createVote(userKey, weeks);
-        kakaoWendyScheduler.startSchedule(userKey);
+        KakaoResponse response = kakaoWendyService.createVote(sessionKey, weeks, botGroupKey);
+        kakaoWendyScheduler.startSchedule(sessionKey);
         return ResponseEntity.ok(response);
     }
 
@@ -153,9 +171,9 @@ public class KakaoSkillController {
     @Operation(summary = "투표 결과 조회")
     @PostMapping("/result")
     public ResponseEntity<KakaoResponse> handleResult(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
-        log.info("[Kakao Skill] RESULT - userKey={}", userKey);
-        return ResponseEntity.ok(kakaoWendyService.getVoteResult(userKey));
+        String sessionKey = getSessionKey(request);
+        log.info("[Kakao Skill] RESULT - sessionKey={}", sessionKey);
+        return ResponseEntity.ok(kakaoWendyService.getVoteResult(sessionKey));
     }
 
     /**
@@ -164,10 +182,10 @@ public class KakaoSkillController {
     @Operation(summary = "재투표")
     @PostMapping("/revote")
     public ResponseEntity<KakaoResponse> handleRevote(@RequestBody KakaoRequest request) {
-        String userKey = request.getUserKey();
-        log.info("[Kakao Skill] REVOTE - userKey={}", userKey);
-        kakaoWendyScheduler.stopSchedule(userKey);
-        return ResponseEntity.ok(kakaoWendyService.revote(userKey));
+        String sessionKey = getSessionKey(request);
+        log.info("[Kakao Skill] REVOTE - sessionKey={}", sessionKey);
+        kakaoWendyScheduler.stopSchedule(sessionKey);
+        return ResponseEntity.ok(kakaoWendyService.revote(sessionKey));
     }
 
     /**
@@ -176,7 +194,7 @@ public class KakaoSkillController {
     @Operation(summary = "도움말")
     @PostMapping("/help")
     public ResponseEntity<KakaoResponse> handleHelp(@RequestBody KakaoRequest request) {
-        log.info("[Kakao Skill] HELP - userKey={}", request.getUserKey());
+        log.info("[Kakao Skill] HELP - sessionKey={}", getSessionKey(request));
         return ResponseEntity.ok(kakaoWendyService.help());
     }
 

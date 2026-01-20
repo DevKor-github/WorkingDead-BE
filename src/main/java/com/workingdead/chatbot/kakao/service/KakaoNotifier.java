@@ -22,9 +22,9 @@ import java.util.stream.Collectors;
 /**
  * 카카오톡 알림 서비스
  *
- * 카카오 비즈메시지 API를 통해 사용자에게 알림을 전송합니다.
- * - 친구톡: 카카오톡 채널 친구에게 메시지 전송
- * - 알림톡: 템플릿 기반 알림 메시지 전송 (사전 승인 필요)
+ * 카카오 Bot API를 통해 그룹 채팅방에 이벤트 메시지를 전송합니다.
+ * - Event API: 그룹 채팅방에 Push 메시지 전송
+ * - 개인챗은 스킬 응답으로만 메시지 전송 가능 (Pull 방식)
  */
 @Service
 @RequiredArgsConstructor
@@ -33,26 +33,55 @@ public class KakaoNotifier {
 
     private final KakaoConfig kakaoConfig;
     private final KakaoWendyService kakaoWendyService;
+    private final KakaoBotApiClient kakaoBotApiClient;
     private final VoteResultService voteResultService;
     private final ParticipantService participantService;
     private final RestTemplate kakaoRestTemplate;
     private final ObjectMapper objectMapper;
 
-    // 카카오 API 엔드포인트
-    private static final String KAKAO_SEND_ME_URL = "https://kapi.kakao.com/v2/api/talk/memo/default/send";
-    private static final String KAKAO_FRIEND_MESSAGE_URL = "https://kapi.kakao.com/v1/api/talk/friends/message/default/send";
+    // ========== Event API (그룹 채팅방 메시지 발송) ==========
 
     /**
-     * 투표 현황 공유 (저장된 세션 정보 기반)
+     * 그룹 채팅방에 이벤트 메시지 발송
+     *
+     * @param botGroupKey 채팅방 키
+     * @param eventName   관리자센터에 등록된 이벤트 블록 이름
      */
-    public void shareVoteStatus(String userKey) {
+    public void sendEventToGroup(String botGroupKey, String eventName) {
         try {
-            // KakaoWendyService에서 voteId 조회 (리플렉션 또는 public 메서드 필요)
-            // 현재는 로그만 출력
-            log.info("[Kakao Notifier] Vote status share requested for userKey: {}", userKey);
+            if (botGroupKey == null || botGroupKey.isBlank()) {
+                log.warn("[Kakao Notifier] botGroupKey is empty. Cannot send event message.");
+                return;
+            }
 
-            // TODO: 실제 카카오 메시지 API 호출
-            // 카카오 비즈메시지를 사용하려면 비즈니스 채널 등록 및 발신 프로필 설정 필요
+            KakaoBotApiClient.EventResponse response =
+                    kakaoBotApiClient.sendEventMessage(List.of(botGroupKey), eventName);
+            log.info("[Kakao Notifier] Event sent: botGroupKey={}, eventName={}, taskId={}",
+                    botGroupKey, eventName, response.getTaskId());
+
+        } catch (Exception e) {
+            log.error("[Kakao Notifier] Failed to send event message: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 투표 현황 공유 (이벤트 메시지)
+     */
+    public void shareVoteStatus(String sessionKey) {
+        try {
+            Long voteId = kakaoWendyService.getVoteIdBySessionKey(sessionKey);
+            if (voteId == null) {
+                log.warn("[Kakao Notifier] No vote found for sessionKey: {}", sessionKey);
+                return;
+            }
+
+            // botGroupKey 조회 (그룹챗인 경우에만 이벤트 발송)
+            String botGroupKey = kakaoWendyService.getBotGroupKeyByVoteId(voteId);
+            if (botGroupKey != null) {
+                sendEventToGroup(botGroupKey, "vote_status");  // 관리자센터에서 설정한 이벤트 블록 이름
+            } else {
+                log.info("[Kakao Notifier] Vote status share requested for individual chat: {}", sessionKey);
+            }
 
         } catch (Exception e) {
             log.error("[Kakao Notifier] Failed to share vote status: {}", e.getMessage());
@@ -60,21 +89,32 @@ public class KakaoNotifier {
     }
 
     /**
-     * 미투표자 리마인드
+     * 미투표자 리마인드 (이벤트 메시지)
      */
-    public void remindNonVoters(String userKey, RemindTiming timing) {
+    public void remindNonVoters(String sessionKey, RemindTiming timing) {
         try {
-            log.info("[Kakao Notifier] Reminder sent to userKey: {}, timing: {}", userKey, timing);
+            Long voteId = kakaoWendyService.getVoteIdBySessionKey(sessionKey);
+            if (voteId == null) {
+                log.warn("[Kakao Notifier] No vote found for sessionKey: {}", sessionKey);
+                return;
+            }
 
-            String message = switch (timing) {
-                case MIN_15, HOUR_1 -> "투표가 시작됐어요! 다른 분들을 위해 빠른 참여 부탁드려요 :D";
-                case HOUR_6 -> "다들 투표를 기다리고 있어요🙌";
-                case HOUR_12 -> "웬디 기다리다 지쳐버림…🥹";
-                case HOUR_24 -> "최후통첩✉️ 곧 투표가 마감됩니다!";
+            String eventName = switch (timing) {
+                case MIN_15 -> "remind_15min";
+                case HOUR_1 -> "remind_1hour";
+                case HOUR_6 -> "remind_6hour";
+                case HOUR_12 -> "remind_12hour";
+                case HOUR_24 -> "remind_24hour";
             };
 
-            // TODO: 실제 카카오 메시지 API 호출
-            log.info("[Kakao Notifier] Message: {}", message);
+            // botGroupKey 조회 (그룹챗인 경우에만 이벤트 발송)
+            String botGroupKey = kakaoWendyService.getBotGroupKeyByVoteId(voteId);
+            if (botGroupKey != null) {
+                sendEventToGroup(botGroupKey, eventName);
+            } else {
+                log.info("[Kakao Notifier] Reminder for individual chat (cannot push): sessionKey={}, timing={}",
+                        sessionKey, timing);
+            }
 
         } catch (Exception e) {
             log.error("[Kakao Notifier] Failed to send reminder: {}", e.getMessage());
@@ -115,7 +155,7 @@ public class KakaoNotifier {
                     .append(") ")
                     .append(periodLabel)
                     .append(" - ")
-                    .append(ranking.voterCount())
+                    .append(ranking.voteCount())
                     .append("명\n");
         }
 

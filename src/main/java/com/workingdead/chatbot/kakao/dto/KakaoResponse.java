@@ -24,6 +24,16 @@ public class KakaoResponse {
     private Template template;
     private Map<String, Object> context;
     private Map<String, Object> data;
+    private Extra extra;  // 멘션 등 추가 기능
+
+    @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class Extra {
+        private Map<String, String> mentions;  // key: 텍스트에서 사용할 키, value: botUserKey
+    }
 
     @Getter
     @NoArgsConstructor
@@ -269,6 +279,83 @@ public class KakaoResponse {
                 .label(label)
                 .action("message")
                 .messageText(messageText)
+                .build();
+    }
+
+    /**
+     * 멘션이 포함된 텍스트 응답 생성
+     * text에 #{mentions.key} 형식으로 멘션 삽입
+     * 예: "#{mentions.user1}님, 투표해주세요!"
+     */
+    public static KakaoResponse simpleTextWithMentions(String text, Map<String, String> mentions) {
+        return KakaoResponse.builder()
+                .version("2.0")
+                .template(Template.builder()
+                        .outputs(List.of(
+                                Output.builder()
+                                        .simpleText(SimpleText.builder().text(text).build())
+                                        .build()
+                        ))
+                        .build())
+                .extra(Extra.builder().mentions(mentions).build())
+                .build();
+    }
+
+    /**
+     * 멘션 텍스트 생성 헬퍼
+     * 예: buildMentionText("user1") -> "#{mentions.user1}"
+     */
+    public static String buildMentionText(String mentionKey) {
+        return "#{mentions." + mentionKey + "}";
+    }
+
+    /**
+     * TextCard 응답 생성
+     */
+    public static KakaoResponse textCard(String title, String description, List<Button> buttons) {
+        return KakaoResponse.builder()
+                .version("2.0")
+                .template(Template.builder()
+                        .outputs(List.of(
+                                Output.builder()
+                                        .basicCard(BasicCard.builder()
+                                                .title(title)
+                                                .description(description)
+                                                .buttons(buttons)
+                                                .build())
+                                        .build()
+                        ))
+                        .build())
+                .build();
+    }
+
+    /**
+     * ListCard 응답 생성
+     */
+    public static KakaoResponse listCard(String headerTitle, List<ListCardItem> items, List<Button> buttons) {
+        return KakaoResponse.builder()
+                .version("2.0")
+                .template(Template.builder()
+                        .outputs(List.of(
+                                Output.builder()
+                                        .listCard(ListCard.builder()
+                                                .header(ListCardHeader.builder().title(headerTitle).build())
+                                                .items(items)
+                                                .buttons(buttons)
+                                                .build())
+                                        .build()
+                        ))
+                        .build())
+                .build();
+    }
+
+    /**
+     * ListCardItem 생성 헬퍼
+     */
+    public static ListCardItem listItem(String title, String description) {
+        return ListCardItem.builder()
+                .title(title)
+                .description(description)
                 .build();
     }
 }

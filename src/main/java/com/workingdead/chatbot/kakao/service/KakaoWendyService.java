@@ -23,7 +23,9 @@ import java.util.stream.Collectors;
 
 /**
  * 카카오 챗봇용 웬디 서비스
- * Discord와 독립적으로 세션 관리 (userKey 기반)
+ * Discord와 독립적으로 세션 관리
+ * - 개인챗: userKey 기반
+ * - 그룹챗: botGroupKey 기반
  */
 @Service
 @RequiredArgsConstructor
@@ -34,23 +36,31 @@ public class KakaoWendyService {
     private final ParticipantService participantService;
     private final VoteResultService voteResultService;
 
-    // 활성 세션 관리 (userKey 기반)
+    // ========== 세션 관리 (sessionKey = botGroupKey 또는 userKey) ==========
+
+    // 활성 세션 관리
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
 
-    // 참석자 목록 (userKey -> List<이름>)
+    // 참석자 목록 (sessionKey -> List<이름>)
     private final Map<String, List<String>> participants = new ConcurrentHashMap<>();
 
-    // 생성된 투표 ID (userKey -> voteId)
-    private final Map<String, Long> userVoteId = new ConcurrentHashMap<>();
+    // 생성된 투표 ID (sessionKey -> voteId)
+    private final Map<String, Long> sessionVoteId = new ConcurrentHashMap<>();
 
-    // 생성된 투표 링크 (userKey -> shareUrl)
-    private final Map<String, String> userShareUrl = new ConcurrentHashMap<>();
+    // 생성된 투표 링크 (sessionKey -> shareUrl)
+    private final Map<String, String> sessionShareUrl = new ConcurrentHashMap<>();
 
-    // 투표 생성 시각 (userKey -> createdAt)
+    // 투표 생성 시각 (sessionKey -> createdAt)
     private final Map<String, LocalDateTime> voteCreatedAt = new ConcurrentHashMap<>();
 
-    // 세션 상태 (userKey -> state)
+    // 세션 상태 (sessionKey -> state)
     private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
+
+    // botGroupKey -> voteId 매핑 (이벤트 메시지 발송용)
+    private final Map<String, Long> groupVoteId = new ConcurrentHashMap<>();
+
+    // voteId -> botGroupKey 역매핑
+    private final Map<Long, String> voteIdToGroupKey = new ConcurrentHashMap<>();
 
     public enum SessionState {
         IDLE,
@@ -58,6 +68,12 @@ public class KakaoWendyService {
         WAITING_WEEKS,
         VOTE_CREATED
     }
+
+    // ========== Deprecated: 하위 호환성 ==========
+    @Deprecated
+    private final Map<String, Long> userVoteId = sessionVoteId;
+    @Deprecated
+    private final Map<String, String> userShareUrl = sessionShareUrl;
 
     // ========== 세션 관리 ==========
 
@@ -277,7 +293,7 @@ public class KakaoWendyService {
                     .append(") ")
                     .append(periodLabel)
                     .append(" - ")
-                    .append(ranking.voterCount())
+                    .append(ranking.voteCount())
                     .append("명\n");
         }
 
@@ -387,6 +403,76 @@ public class KakaoWendyService {
                     )
             );
         };
+    }
+
+    // ========== 그룹챗 지원 메서드 ==========
+
+    /**
+     * 세션 시작 (그룹챗용)
+     */
+    public KakaoResponse startSession(String sessionKey, String botGroupKey) {
+        KakaoResponse response = startSession(sessionKey);
+
+        // 그룹챗인 경우 botGroupKey 추가 저장
+        if (botGroupKey != null && !botGroupKey.isBlank()) {
+            log.info("[Kakao When:D] Group session started: sessionKey={}, botGroupKey={}", sessionKey, botGroupKey);
+        }
+
+        return response;
+    }
+
+    /**
+     * 투표 생성 (그룹챗용)
+     */
+    public KakaoResponse createVote(String sessionKey, int weeks, String botGroupKey) {
+        KakaoResponse response = createVote(sessionKey, weeks);
+
+        // 그룹챗인 경우 botGroupKey -> voteId 매핑 저장
+        if (botGroupKey != null && !botGroupKey.isBlank()) {
+            Long voteId = sessionVoteId.get(sessionKey);
+            if (voteId != null) {
+                groupVoteId.put(botGroupKey, voteId);
+                voteIdToGroupKey.put(voteId, botGroupKey);
+                log.info("[Kakao When:D] Group vote mapping: botGroupKey={}, voteId={}", botGroupKey, voteId);
+            }
+        }
+
+        return response;
+    }
+
+    /**
+     * botGroupKey로 voteId 조회
+     */
+    public Long getVoteIdByBotGroupKey(String botGroupKey) {
+        return groupVoteId.get(botGroupKey);
+    }
+
+    /**
+     * voteId로 botGroupKey 조회
+     */
+    public String getBotGroupKeyByVoteId(Long voteId) {
+        return voteIdToGroupKey.get(voteId);
+    }
+
+    /**
+     * sessionKey로 voteId 조회
+     */
+    public Long getVoteIdBySessionKey(String sessionKey) {
+        return sessionVoteId.get(sessionKey);
+    }
+
+    /**
+     * sessionKey로 shareUrl 조회
+     */
+    public String getShareUrlBySessionKey(String sessionKey) {
+        return sessionShareUrl.get(sessionKey);
+    }
+
+    /**
+     * sessionKey로 voteCreatedAt 조회
+     */
+    public LocalDateTime getVoteCreatedAtBySessionKey(String sessionKey) {
+        return voteCreatedAt.get(sessionKey);
     }
 
     // ========== 헬퍼 메서드 ==========

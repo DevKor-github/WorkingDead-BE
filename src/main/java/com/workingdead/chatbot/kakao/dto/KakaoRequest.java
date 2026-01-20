@@ -20,6 +20,16 @@ public class KakaoRequest {
     private UserRequest userRequest;
     private Bot bot;
     private Action action;
+    private Chat chat;  // 그룹 채팅방 정보
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Chat {
+        private String id;      // 채팅방 ID (botGroupKey)
+        private String type;    // 채팅방 타입
+    }
 
     @Getter
     @Setter
@@ -118,6 +128,33 @@ public class KakaoRequest {
     public String getBotId() {
         if (bot != null) {
             return bot.getId();
+        }
+        return null;
+    }
+
+    /**
+     * 그룹 채팅방 키 (botGroupKey) 조회
+     */
+    public String getBotGroupKey() {
+        if (chat != null) {
+            return chat.getId();
+        }
+        return null;
+    }
+
+    /**
+     * 그룹 채팅방 여부 확인
+     */
+    public boolean isGroupChat() {
+        return chat != null && chat.getId() != null;
+    }
+
+    /**
+     * 사용자의 botUserKey 조회 (그룹챗에서 사용자 식별용)
+     */
+    public String getBotUserKey() {
+        if (userRequest != null && userRequest.getUser() != null) {
+            return userRequest.getUser().getId();
         }
         return null;
     }

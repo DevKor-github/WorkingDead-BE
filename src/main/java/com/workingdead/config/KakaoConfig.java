@@ -19,9 +19,20 @@ public class KakaoConfig {
     private String restApiKey;
     private String adminKey;
     private String channelId;
+    private String botId;
+
+    // Bot API Base URL
+    public static final String BOT_API_BASE_URL = "https://bot-api.kakao.com";
 
     @Bean
     public RestTemplate kakaoRestTemplate() {
         return new RestTemplate();
+    }
+
+    /**
+     * 개발용 botId (botId! 형식)
+     */
+    public String getDevBotId() {
+        return botId + "!";
     }
 }
