@@ -69,6 +69,6 @@ discord:
 
 kakao:
   rest-api-key: ${KAKAO_REST_API_KEY}
-  admin-key: ${KAKAO_ADMIN_KEY:}
+  event-api-key: ${KAKAO_EVENT_API_KEY:}
   channel-id: ${KAKAO_CHANNEL_ID:}
   bot-id: ${KAKAO_BOT_ID:}
