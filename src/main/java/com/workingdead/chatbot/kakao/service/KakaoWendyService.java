@@ -1,12 +1,10 @@
 package com.workingdead.chatbot.kakao.service;
 
 import com.workingdead.chatbot.kakao.dto.KakaoResponse;
-import com.workingdead.meet.dto.ParticipantDtos.ParticipantStatusRes;
 import com.workingdead.meet.dto.VoteDtos.CreateVoteReq;
 import com.workingdead.meet.dto.VoteDtos.VoteSummary;
 import com.workingdead.meet.dto.VoteResultDtos.RankingRes;
 import com.workingdead.meet.dto.VoteResultDtos.VoteResultRes;
-import com.workingdead.meet.service.ParticipantService;
 import com.workingdead.meet.service.VoteResultService;
 import com.workingdead.meet.service.VoteService;
 import lombok.RequiredArgsConstructor;
@@ -15,17 +13,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * 카카오 챗봇용 웬디 서비스
- * Discord와 독립적으로 세션 관리
- * - 개인챗: userKey 기반
- * - 그룹챗: botGroupKey 기반
+ * - 그룹챗 전용: botGroupKey 기반
  */
 @Service
 @RequiredArgsConstructor
@@ -33,69 +26,37 @@ import java.util.stream.Collectors;
 public class KakaoWendyService {
 
     private final VoteService voteService;
-    private final ParticipantService participantService;
     private final VoteResultService voteResultService;
 
-    // ========== 세션 관리 (sessionKey = botGroupKey 또는 userKey) ==========
+    // ========== 세션 관리 (key = botGroupKey) ==========
 
     // 활성 세션 관리
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
-
-    // 참석자 목록 (sessionKey -> List<botUserKey>)
-    private final Map<String, List<String>> participants = new ConcurrentHashMap<>();
-
-    // 참석자 표시명 (sessionKey -> List<표시명>)
-    private final Map<String, List<String>> participantDisplayNames = new ConcurrentHashMap<>();
-
-    // 생성된 투표 ID (sessionKey -> voteId)
+    // 생성된 투표 ID (botGroupKey -> voteId)
     private final Map<String, Long> sessionVoteId = new ConcurrentHashMap<>();
-
-    // 생성된 투표 링크 (sessionKey -> shareUrl)
-    private final Map<String, String> sessionShareUrl = new ConcurrentHashMap<>();
-
-    // 투표 생성 시각 (sessionKey -> createdAt)
-    private final Map<String, LocalDateTime> voteCreatedAt = new ConcurrentHashMap<>();
-
-    // 세션 상태 (sessionKey -> state)
+    // 세션 상태 (botGroupKey -> state)
     private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
-
-    // botGroupKey -> voteId 매핑 (이벤트 메시지 발송용)
-    private final Map<String, Long> groupVoteId = new ConcurrentHashMap<>();
-
-    // voteId -> botGroupKey 역매핑
-    private final Map<Long, String> voteIdToGroupKey = new ConcurrentHashMap<>();
 
     public enum SessionState {
         IDLE,
-        WAITING_PARTICIPANTS,
         WAITING_WEEKS,
         VOTE_CREATED
     }
 
-    // ========== Deprecated: 하위 호환성 ==========
-    @Deprecated
-    private final Map<String, Long> userVoteId = sessionVoteId;
-    @Deprecated
-    private final Map<String, String> userShareUrl = sessionShareUrl;
-
-    // ========== 세션 관리 ==========
-
     /**
-     * 세션 시작 (웬디 시작)
+     * 세션 시작 (@웬디 시작)
+     * - 그룹챗 전용: botGroupKey를 세션 키로 사용
+     * - 다음 단계: 주차(기간) 선택 대기
      */
-    public KakaoResponse startSession(String userKey) {
-        activeSessions.add(userKey);
-        participants.put(userKey, new ArrayList<>());
-        participantDisplayNames.put(userKey, new ArrayList<>());
-        userVoteId.remove(userKey);
-        userShareUrl.remove(userKey);
-        voteCreatedAt.remove(userKey);
-        sessionStates.put(userKey, SessionState.WAITING_WEEKS);
+    public KakaoResponse startSession(String botGroupKey) {
+        activeSessions.add(botGroupKey);
+        sessionVoteId.remove(botGroupKey);
+        sessionStates.put(botGroupKey, SessionState.WAITING_WEEKS);
 
-        log.info("[Kakao When:D] Session started: {}", userKey);
+        log.info("[Kakao When:D] Session started: botGroupKey={}", botGroupKey);
 
         Map<String, Object> data = new HashMap<>();
-        data.put("sessionKey", userKey);
+        data.put("botGroupKey", botGroupKey);
         data.put("state", SessionState.WAITING_WEEKS.name());
         data.put("active", true);
         return dataOnly(data);
@@ -104,26 +65,29 @@ public class KakaoWendyService {
     /**
      * 세션 활성 여부 확인
      */
-    public boolean isSessionActive(String userKey) {
-        return activeSessions.contains(userKey);
+    public boolean isSessionActive(String botGroupKey) {
+        return activeSessions.contains(botGroupKey);
     }
 
     /**
      * 세션 종료 (웬디 종료)
      */
-    public KakaoResponse endSession(String userKey) {
-        activeSessions.remove(userKey);
-        participants.remove(userKey);
-        userVoteId.remove(userKey);
-        participantDisplayNames.remove(userKey);
-        userShareUrl.remove(userKey);
-        voteCreatedAt.remove(userKey);
-        sessionStates.remove(userKey);
+    public KakaoResponse endSession(String botGroupKey) {
+        Long voteId = sessionVoteId.get(botGroupKey);
 
-        log.info("[Kakao When:D] Session ended: {}", userKey);
+        if (voteId != null) {
+            voteService.closeVote(voteId); // status = CLOSED
+            log.info("[Kakao When:D] Vote closed: voteId={}", voteId);
+        }
+
+        activeSessions.remove(botGroupKey);
+        sessionVoteId.remove(botGroupKey);
+        sessionStates.remove(botGroupKey);
+
+        log.info("[Kakao When:D] Session ended: botGroupKey={}", botGroupKey);
 
         Map<String, Object> data = new HashMap<>();
-        data.put("sessionKey", userKey);
+        data.put("botGroupKey", botGroupKey);
         data.put("state", SessionState.IDLE.name());
         data.put("active", false);
         return dataOnly(data);
@@ -132,65 +96,22 @@ public class KakaoWendyService {
     /**
      * 현재 세션 상태 조회
      */
-    public SessionState getSessionState(String userKey) {
-        return sessionStates.getOrDefault(userKey, SessionState.IDLE);
+    public SessionState getSessionState(String botGroupKey) {
+        return sessionStates.getOrDefault(botGroupKey, SessionState.IDLE);
     }
 
-    // ========== 참석자 관리 ==========
-
-    /**
-     * 참석자 추가 (botUserKey 리스트 입력)
-     **/
-    public KakaoResponse addParticipants(String userKey, String input) {
-        // input: 컨트롤러에서 botUserKey 목록을 ","로 정규화하여 전달한다고 가정
-        String raw = Optional.ofNullable(input).orElse("");
-
-        List<String> keys = Arrays.stream(raw.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .distinct()
-                .collect(Collectors.toList());
-
-        if (keys.isEmpty()) {
-            Map<String, Object> data = new HashMap<>();
-            data.put("sessionKey", userKey);
-            data.put("state", getSessionState(userKey).name());
-            data.put("participantCount", 0);
-            data.put("enabled", false);
-            return dataOnly(data);
-        }
-
-        // 표시명은 PRD 상 botUserKey만 받는 상황을 고려해 임시 생성
-        List<String> displayNames = new ArrayList<>();
-        for (int i = 0; i < keys.size(); i++) {
-            displayNames.add("참석자" + (i + 1));
-        }
-
-        participants.put(userKey, keys);
-        participantDisplayNames.put(userKey, displayNames);
-        sessionStates.put(userKey, SessionState.WAITING_WEEKS);
-
-        log.info("[Kakao When:D] Participants added: {} -> {}", userKey, keys);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("sessionKey", userKey);
-        data.put("state", SessionState.WAITING_WEEKS.name());
-        data.put("participantCount", keys.size());
-        data.put("botUserKeys", keys);
-
-        data.put("participantDisplayNames", displayNames);
-        return dataOnly(data);
-    }
+    // 참석자 관리 섹션 삭제됨
 
     // ========== 투표 생성 ==========
 
     /**
-     * 투표 생성 (주차 선택 후)
+     * 투표 생성 (주차/기간 선택 후)
+     * - 사용자 입력(weeks)을 기준으로 서버에서 날짜 범위를 계산합니다.
+     * - Vote 엔티티에 botGroupKey를 포함하여 저장해야 합니다. (Vote.botGroupKey, status=ACTIVE)
+     * - 사용자에게는 고정 리다이렉트 엔드포인트(/open-vote) 링크를 제공합니다.
      */
-    public KakaoResponse createVote(String userKey, int weeks) {
-        voteCreatedAt.put(userKey, LocalDateTime.now());
-
-        // 1. 날짜 범위 계산
+    public KakaoResponse createVote(String botGroupKey, int weeks) {
+        // 날짜 범위 계산
         LocalDate today = LocalDate.now();
         LocalDate startDate;
         LocalDate endDate;
@@ -205,38 +126,35 @@ public class KakaoWendyService {
             endDate = startDate.plusDays(6);
         }
 
-        // 2. 참여자 표시명 리스트
-        List<String> participantNames = participantDisplayNames.getOrDefault(userKey, List.of());
+        // 세션 상태 정리
+        activeSessions.add(botGroupKey);
+        sessionStates.put(botGroupKey, SessionState.VOTE_CREATED);
 
-        // 3. 투표 생성
         CreateVoteReq req = new CreateVoteReq(
                 "카카오 투표",
                 startDate,
                 endDate,
-                participantNames.isEmpty() ? null : participantNames
+                null
         );
 
-        VoteSummary summary = voteService.create(req);
+        VoteSummary summary = voteService.create(req, botGroupKey);
         Long voteId = summary.id();
-        String shareUrl = summary.shareUrl();
 
-        userVoteId.put(userKey, voteId);
-        userShareUrl.put(userKey, shareUrl);
-        sessionStates.put(userKey, SessionState.VOTE_CREATED);
+        // 고정 리다이렉트 링크 (카카오가 botGroupKey/botUserKey/appUserId를 자동 append)
+        String redirectUrl = "/open-vote";
 
-        log.info("[Kakao When:D] Vote created: userKey={}, voteId={}, weeks={}", userKey, voteId, weeks);
+        sessionVoteId.put(botGroupKey, voteId);
 
-        String weekLabel = weeks == 0 ? "이번 주" : weeks + "주 뒤";
+        log.info("[Kakao When:D] Vote created: botGroupKey={}, voteId={}, startDate={}, endDate={}, weeks={}",
+                botGroupKey, voteId, startDate, endDate, weeks);
 
         Map<String, Object> data = new HashMap<>();
+        data.put("botGroupKey", botGroupKey);
         data.put("voteId", voteId);
-        data.put("shareUrl", shareUrl);
-        data.put("weekLabel", weekLabel);
+        data.put("redirectUrl", redirectUrl);
         data.put("startDate", startDate.toString());
         data.put("endDate", endDate.toString());
-        data.put("participants", participantNames);
-
-        data.put("sessionKey", userKey);
+        data.put("weeks", weeks);
         data.put("state", SessionState.VOTE_CREATED.name());
         return dataOnly(data);
     }
@@ -245,16 +163,25 @@ public class KakaoWendyService {
      * 주차 파싱 (0 = 이번 주, 1~6 = n주 뒤)
      */
     public Integer parseWeeks(String input) {
-        if (input.contains("이번")) return 0;
-        if (input.contains("1주")) return 1;
-        if (input.contains("2주")) return 2;
-        if (input.contains("3주")) return 3;
-        if (input.contains("4주")) return 4;
-        if (input.contains("5주")) return 5;
-        if (input.contains("6주")) return 6;
+        if (input == null || input.isBlank()) return null;
 
-        // 숫자만 추출
-        String numbers = input.replaceAll("[^0-9]", "");
+        String s = input.trim();
+
+        // 자주 쓰는 자연어 표현
+        if (s.contains("이번")) return 0;
+        if (s.contains("다다음")) return 2;
+        if (s.contains("다음")) return 1;
+
+        // 명시적 "n주" 표현
+        if (s.contains("1주")) return 1;
+        if (s.contains("2주")) return 2;
+        if (s.contains("3주")) return 3;
+        if (s.contains("4주")) return 4;
+        if (s.contains("5주")) return 5;
+        if (s.contains("6주")) return 6;
+
+        // 숫자만 추출 (예: "2주 후", "3주뒤" 등)
+        String numbers = s.replaceAll("[^0-9]", "");
         if (!numbers.isEmpty()) {
             try {
                 int weeks = Integer.parseInt(numbers);
@@ -269,9 +196,9 @@ public class KakaoWendyService {
     /**
      * 투표 결과 조회
      */
-    public KakaoResponse getVoteResult(String userKey) {
-        Long voteId = userVoteId.get(userKey);
-        String shareUrl = userShareUrl.get(userKey);
+    public KakaoResponse getVoteResult(String botGroupKey) {
+        Long voteId = sessionVoteId.get(botGroupKey);
+        String redirectUrl = "/open-vote";
 
         if (voteId == null) {
             return textOnly("""
@@ -287,12 +214,9 @@ public class KakaoWendyService {
             StringBuilder sb = new StringBuilder();
             sb.append("웬디가 투표 현황을 공유드려요! :D\n\n");
             sb.append("엥 아직 아무도 투표를 안 했네요 :(\n");
-            if (shareUrl != null && !shareUrl.isBlank()) {
-                sb.append("\n투표하러 가기: ").append(shareUrl);
-            }
+            sb.append("\n투표하러 가기: ").append(redirectUrl);
             return textOnly(sb.toString().trim());
         }
-
 
         // 1~3순위만 출력 (없는 순위는 생략)
         List<RankingRes> top3 = result.rankings().stream()
@@ -303,12 +227,7 @@ public class KakaoWendyService {
 
         StringBuilder sb = new StringBuilder();
         sb.append("웬디가 투표 현황을 공유드려요! :D\n");
-
-        if (shareUrl != null && !shareUrl.isBlank()) {
-            sb.append("\n투표하러 가기: ").append(shareUrl).append("\n\n");
-        } else {
-            sb.append("\n투표 링크가 준비되지 않았어요 😢\n\n");
-        }
+        sb.append("\n투표하러 가기: ").append(redirectUrl).append("\n\n");
 
         for (RankingRes rank : top3) {
             String periodLabel = "LUNCH".equals(rank.period()) ? "점심" : "저녁";
@@ -337,18 +256,21 @@ public class KakaoWendyService {
     }
 
     /**
-     * 재투표 (동일 참석자로 새 투표 생성)
+     * 재투표 (세션 상태를 WAITING_WEEKS로 되돌리고 voteId를 제거)
      */
-    public KakaoResponse revote(String userKey) {
-        if (!userVoteId.containsKey(userKey)) {
+    public KakaoResponse revote(String botGroupKey) {
+        if (!sessionVoteId.containsKey(botGroupKey)) {
+            activeSessions.add(botGroupKey);
+            sessionStates.put(botGroupKey, SessionState.WAITING_WEEKS);
             Map<String, Object> data = new HashMap<>();
             data.put("hasVote", false);
-            data.put("state", getSessionState(userKey).name());
+            data.put("state", SessionState.WAITING_WEEKS.name());
             return dataOnly(data);
         }
 
-        userVoteId.remove(userKey);
-        sessionStates.put(userKey, SessionState.WAITING_WEEKS);
+        sessionVoteId.remove(botGroupKey);
+        activeSessions.add(botGroupKey);
+        sessionStates.put(botGroupKey, SessionState.WAITING_WEEKS);
 
         Map<String, Object> data = new HashMap<>();
         data.put("hasVote", true);
@@ -368,89 +290,21 @@ public class KakaoWendyService {
     /**
      * 알 수 없는 입력 처리
      */
-    public KakaoResponse unknownInput(String userKey) {
-        SessionState state = getSessionState(userKey);
+    public KakaoResponse unknownInput(String botGroupKey) {
+        SessionState state = getSessionState(botGroupKey);
         Map<String, Object> data = new HashMap<>();
         data.put("state", state.name());
-        String shareUrl = userShareUrl.get(userKey);
-        if (shareUrl != null) {
-            data.put("shareUrl", shareUrl);
-        }
-        Long voteId = userVoteId.get(userKey);
+        Long voteId = sessionVoteId.get(botGroupKey);
         if (voteId != null) {
             data.put("voteId", voteId);
+            data.put("redirectUrl", "/open-vote");
         }
+        data.put("botGroupKey", botGroupKey);
         return dataOnly(data);
     }
 
-    // ========== 그룹챗 지원 메서드 ==========
-
-    /**
-     * 세션 시작 (그룹챗용)
-     */
-    public KakaoResponse startSession(String sessionKey, String botGroupKey) {
-        KakaoResponse response = startSession(sessionKey);
-
-        // 그룹챗인 경우 botGroupKey 추가 저장
-        if (botGroupKey != null && !botGroupKey.isBlank()) {
-            log.info("[Kakao When:D] Group session started: sessionKey={}, botGroupKey={}", sessionKey, botGroupKey);
-        }
-
-        return response;
-    }
-
-    /**
-     * 투표 생성 (그룹챗용)
-     */
-    public KakaoResponse createVote(String sessionKey, int weeks, String botGroupKey) {
-        KakaoResponse response = createVote(sessionKey, weeks);
-
-        // 그룹챗인 경우 botGroupKey -> voteId 매핑 저장
-        if (botGroupKey != null && !botGroupKey.isBlank()) {
-            Long voteId = sessionVoteId.get(sessionKey);
-            if (voteId != null) {
-                groupVoteId.put(botGroupKey, voteId);
-                voteIdToGroupKey.put(voteId, botGroupKey);
-                log.info("[Kakao When:D] Group vote mapping: botGroupKey={}, voteId={}", botGroupKey, voteId);
-            }
-        }
-
-        return response;
-    }
-
-    /**
-     * botGroupKey로 voteId 조회
-     */
     public Long getVoteIdByBotGroupKey(String botGroupKey) {
-        return groupVoteId.get(botGroupKey);
-    }
-
-    /**
-     * voteId로 botGroupKey 조회
-     */
-    public String getBotGroupKeyByVoteId(Long voteId) {
-        return voteIdToGroupKey.get(voteId);
-    }
-
-    /**
-     * sessionKey로 voteId 조회
-     */
-    public Long getVoteIdBySessionKey(String sessionKey) {
-        return sessionVoteId.get(sessionKey);
-    }
-
-    /**
-     * sessionKey로 shareUrl 조회
-     */
-    public String getShareUrlBySessionKey(String sessionKey) {
-        return sessionShareUrl.get(sessionKey);
-    }
-
-    /**
-     * sessionKey로 voteCreatedAt 조회
-     */
-    public LocalDateTime getVoteCreatedAtBySessionKey(String sessionKey) {
-        return voteCreatedAt.get(sessionKey);
+        return sessionVoteId.get(botGroupKey);
     }
 
     // ========== 헬퍼 메서드 ==========
@@ -479,15 +333,4 @@ public class KakaoWendyService {
                 .build();
     }
 
-    private String getDayLabel(DayOfWeek dayOfWeek) {
-        return switch (dayOfWeek) {
-            case MONDAY -> "월";
-            case TUESDAY -> "화";
-            case WEDNESDAY -> "수";
-            case THURSDAY -> "목";
-            case FRIDAY -> "금";
-            case SATURDAY -> "토";
-            case SUNDAY -> "일";
-        };
-    }
 }

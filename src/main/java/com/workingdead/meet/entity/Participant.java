@@ -13,8 +13,15 @@ import java.util.List;
 @AllArgsConstructor 
 @Builder
 @Entity
-@Table(name = "participant")
-public class Participant {
+@Table(
+        name = "participant",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_participant_vote_bot_user",
+                        columnNames = {"vote_id", "vote_user_key"}
+                )
+        }
+)public class Participant {
     
     @Id 
     @GeneratedValue(strategy = GenerationType.IDENTITY)

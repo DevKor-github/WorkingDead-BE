@@ -8,10 +8,8 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.util.NoSuchElementException;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 import org.springframework.web.server.ResponseStatusException;
@@ -25,8 +23,6 @@ public class ParticipantService {
     private final VoteRepository voteRepo;
     private final ParticipantSelectionRepository selectionRepo;      // 추가!
     private final PriorityPreferenceRepository priorityRepo;         // 추가!
-    private static final String CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
-    private final SecureRandom rnd = new SecureRandom();
 
     // 생성자 수정
     public ParticipantService(
@@ -41,17 +37,19 @@ public class ParticipantService {
     }
 
     /**
-     * (PRD) 참가자 생성/진입 처리
+     * (PRD) 참가자 upsert
      * - 식별은 (voteId, botUserKey)
      * - displayName은 웹에서 사용자가 입력하므로 처음에는 비어 있을 수 있음
      */
     public ParticipantDtos.ParticipantRes add(Long voteId, String botUserKey, String displayName) {
         Participant participant = getOrCreateByVoteAndBotUserKey(voteId, botUserKey);
 
-        // displayName이 새로 들어오고 기존 값이 비어있다면 업데이트
-        if (displayName != null && !displayName.isBlank()
-                && (participant.getDisplayName() == null || participant.getDisplayName().isBlank())) {
-            participant.setDisplayName(displayName);
+        // displayName은 웹에서 입력/수정될 수 있으므로, 값이 들어오면 항상 최신으로 반영합니다.
+        if (displayName != null && !displayName.isBlank()) {
+            String trimmed = displayName.trim();
+            if (!Objects.equals(trimmed, participant.getDisplayName())) {
+                participant.setDisplayName(trimmed);
+            }
         }
 
         Participant saved = participantRepo.save(participant);
@@ -67,6 +65,11 @@ public class ParticipantService {
      * - 없으면 생성하며, displayName은 이후 웹에서 업데이트될 수 있음
      */
     private Participant getOrCreateByVoteAndBotUserKey(Long voteId, String botUserKey) {
+
+        if (voteId == null) {
+            throw new IllegalArgumentException("voteId is required");
+        }
+
         if (botUserKey == null || botUserKey.isBlank()) {
             throw new IllegalArgumentException("botUserKey is required");
         }
@@ -236,12 +239,6 @@ public class ParticipantService {
                 saved.getSubmittedAt(),
                 saved.getSubmitted()
         );
-    }
-    
-    private String genCode(int len) {
-        StringBuilder sb = new StringBuilder(len);
-        for (int i=0;i<len;i++) sb.append(CODE_ALPHABET.charAt(rnd.nextInt(CODE_ALPHABET.length())));
-        return sb.toString();
     }
 
     /**

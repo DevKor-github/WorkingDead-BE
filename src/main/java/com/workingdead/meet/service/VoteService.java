@@ -2,8 +2,8 @@ package com.workingdead.meet.service;
 
 import com.workingdead.meet.dto.ParticipantDtos;
 import com.workingdead.meet.dto.VoteDtos;
-import com.workingdead.meet.entity.Participant;
 import com.workingdead.meet.entity.Vote;
+import com.workingdead.meet.entity.Vote.VoteStatus;
 import com.workingdead.meet.repository.VoteRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,27 +27,42 @@ public class VoteService {
     }
 
 
+    /**
+     * @deprecated PRD 기준으로 Vote.botGroupKey가 NOT NULL 입니다.
+     *             카카오 플로우에서는 반드시 create(req, botGroupKey) 를 사용하세요.
+     */
+    @Deprecated
     public VoteDtos.VoteSummary create(VoteDtos.CreateVoteReq req) {
-        //1. Vote c
+        throw new UnsupportedOperationException("Vote.botGroupKey is required. Use create(req, botGroupKey).");
+    }
+
+    /**
+     * 투표 생성 (카카오 그룹챗 전용)
+     * - botGroupKey를 Vote에 저장 (NOT NULL)
+     * - 같은 botGroupKey에 ACTIVE 투표가 이미 있으면 CLOSED로 종료 처리
+     */
+    public VoteDtos.VoteSummary create(VoteDtos.CreateVoteReq req, String botGroupKey) {
+        if (botGroupKey == null || botGroupKey.isBlank()) {
+            throw new IllegalArgumentException("botGroupKey must not be blank");
+        }
+
+        // 0) 기존 ACTIVE 투표가 있으면 종료 (status 활용)
+        voteRepo.findTopByBotGroupKeyAndStatusOrderByCreatedAtDesc(botGroupKey, VoteStatus.ACTIVE)
+                .ifPresent(Vote::close);
+
+        // 1) Vote 생성
         String code = genCode(8);
         Vote v = new Vote(req.name(), code);
 
-        // 2. 날짜 범위 설정 (있으면)
+        // botGroupKey 세팅 (Vote.botGroupKey NOT NULL)
+        v.setBotGroupKey(botGroupKey);
+
+        // 2) 날짜 범위 설정 (있으면)
         if (req.startDate() != null && req.endDate() != null) {
             if (req.endDate().isBefore(req.startDate())) {
                 throw new IllegalArgumentException("endDate must be >= startDate");
             }
             v.setDateRange(req.startDate(), req.endDate());
-
-            // 3. 참여자 추가 (있으면)
-            if (req.participantNames() != null && !req.participantNames().isEmpty()) {
-                for (String name : req.participantNames()) {
-                    if (name != null && !name.isBlank()) {
-                        Participant p = new Participant(v, name.trim());
-                        v.getParticipants().add(p);
-                    }
-                }
-            }
         }
 
         voteRepo.save(v);
@@ -82,9 +97,27 @@ public class VoteService {
         return toDetail(v);
     }
 
+    @Transactional
+    public void closeVote(Long voteId) {
+        Vote vote = voteRepo.findById(voteId)
+                .orElseThrow(() -> new NoSuchElementException("vote not found"));
+        vote.close(); // status = CLOSED
+    }
+
 
     public void delete(Long id) {
         voteRepo.deleteById(id);
+    }
+
+    /**
+     * 채팅방(botGroupKey) 기준으로 "현재 활성" 투표를 찾아야 할 때 사용합니다.
+     */
+    public Vote findActiveVoteByBotGroupKey(String botGroupKey) {
+        return voteRepo
+                .findTopByBotGroupKeyAndStatusOrderByCreatedAtDesc(
+                        botGroupKey, VoteStatus.ACTIVE
+                )
+                .orElseThrow(() -> new NoSuchElementException("active vote not found"));
     }
 
 
@@ -99,7 +132,7 @@ public class VoteService {
 
     private VoteDtos.VoteSummary toSummary(Vote v) {
         String admin = baseUrl + "/admin/votes/" + v.getId();
-        String share = baseUrl + "/v/" + v.getCode();
+        String share = shareUrl(v);
         return new VoteDtos.VoteSummary(v.getId(), v.getName(), v.getCode(), admin, share, v.getStartDate(), v.getEndDate());
     }
 
@@ -110,5 +143,9 @@ public class VoteService {
             .toList();
 
         return new VoteDtos.VoteDetail(v.getId(), v.getName(), v.getCode(), v.getStartDate(), v.getEndDate(), participants);
+    }
+
+    private String shareUrl(Vote v) {
+        return baseUrl + "/v/" + v.getCode();
     }
 }
