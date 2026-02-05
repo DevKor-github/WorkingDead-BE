@@ -18,7 +18,7 @@ import java.util.List;
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "uk_participant_vote_bot_user",
-                        columnNames = {"vote_id", "vote_user_key"}
+                        columnNames = {"vote_id", "bot_user_key"}
                 )
         }
 )public class Participant {
@@ -34,7 +34,7 @@ import java.util.List;
     @Column(name = "display_name")
     private String displayName;
 
-    @Column(name = "vote_user_key", nullable = false)
+    @Column(name = "bot_user_key", nullable = false)
     private String botUserKey;
 
     @Column(name = "submitted_at")
