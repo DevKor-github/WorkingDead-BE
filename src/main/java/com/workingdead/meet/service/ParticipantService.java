@@ -4,6 +4,7 @@ import com.workingdead.meet.dto.*;
 import com.workingdead.meet.entity.*;
 import com.workingdead.meet.repository.*;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,13 +40,48 @@ public class ParticipantService {
         this.priorityRepo = priorityRepo;                            // 추가!
     }
 
-    public ParticipantDtos.ParticipantRes add(Long voteId, String displayName) {
-        Vote v = voteRepo.findById(voteId)
-                        .orElseThrow(() -> new NoSuchElementException("vote not found"));
-        Participant p = new Participant(v, displayName);
-        participantRepo.save(p);
-        return new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName(), false);
+    /**
+     * (PRD) 참가자 생성/진입 처리
+     * - 식별은 (voteId, botUserKey)
+     * - displayName은 웹에서 사용자가 입력하므로 처음에는 비어 있을 수 있음
+     */
+    public ParticipantDtos.ParticipantRes add(Long voteId, String botUserKey, String displayName) {
+        Participant participant = getOrCreateByVoteAndBotUserKey(voteId, botUserKey);
+
+        // displayName이 새로 들어오고 기존 값이 비어있다면 업데이트
+        if (displayName != null && !displayName.isBlank()
+                && (participant.getDisplayName() == null || participant.getDisplayName().isBlank())) {
+            participant.setDisplayName(displayName);
+        }
+
+        Participant saved = participantRepo.save(participant);
+        return new ParticipantDtos.ParticipantRes(
+                saved.getId(),
+                saved.getDisplayName(),
+                Boolean.TRUE.equals(saved.getSubmitted())
+        );
     }
+
+    /**
+     * (voteId, botUserKey)로 Participant 확보
+     * - 없으면 생성하며, displayName은 이후 웹에서 업데이트될 수 있음
+     */
+    private Participant getOrCreateByVoteAndBotUserKey(Long voteId, String botUserKey) {
+        if (botUserKey == null || botUserKey.isBlank()) {
+            throw new IllegalArgumentException("botUserKey is required");
+        }
+
+        Optional<Participant> existing = participantRepo.findByVoteIdAndBotUserKey(voteId, botUserKey);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        Vote vote = voteRepo.findById(voteId)
+                .orElseThrow(() -> new NoSuchElementException("vote not found"));
+
+        return new Participant(vote, null, botUserKey);
+    }
+
 
     public ParticipantDtos.ParticipantRes updateParticipant(Long participantId, ParticipantDtos.UpdateParticipantReq request) {
         Participant participant = participantRepo.findById(participantId)
@@ -61,7 +97,7 @@ public class ParticipantService {
         return new ParticipantDtos.ParticipantRes(
                 saved.getId(),
                 saved.getDisplayName(),
-                false
+                Boolean.TRUE.equals(saved.getSubmitted())
         );
     }
 
@@ -104,7 +140,7 @@ public class ParticipantService {
                 .map(p -> new ParticipantDtos.ParticipantRes(
                         p.getId(),
                         p.getDisplayName(),
-                        false 
+                        Boolean.TRUE.equals(p.getSubmitted())
                 ))
                 .collect(Collectors.toList());
     }

@@ -7,7 +7,7 @@ import java.util.List;
 
 
 public class ParticipantDtos {
-    public record CreateParticipantReq(@NotBlank String displayName) {}
+    public record CreateParticipantReq(@NotBlank String botUserKey, String displayName) {}
     public record UpdateParticipantReq(String displayName) {}
     public record ParticipantRes(Long id, String displayName, boolean loggedIn // 로그인 상태
         ) {}
