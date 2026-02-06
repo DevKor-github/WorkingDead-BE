@@ -17,13 +17,20 @@ import java.util.*;
 @Transactional
 public class VoteService {
     private final VoteRepository voteRepo;
+    private final ParticipantService participantService;
     private final String baseUrl;
     private static final String CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no confusing chars
     private final SecureRandom rnd = new SecureRandom();
 
 
-    public VoteService(VoteRepository voteRepo, @Value("${app.base-url:http://whendy.netlify.app}") String baseUrl) {
-        this.voteRepo = voteRepo; this.baseUrl = baseUrl;
+    public VoteService(
+            VoteRepository voteRepo,
+            ParticipantService participantService,
+            @Value("${app.base-url:http://whendy.netlify.app}") String baseUrl
+    ) {
+        this.voteRepo = voteRepo;
+        this.participantService = participantService;
+        this.baseUrl = baseUrl;
     }
 
 
@@ -40,8 +47,9 @@ public class VoteService {
      * 투표 생성 (카카오 그룹챗 전용)
      * - botGroupKey를 Vote에 저장 (NOT NULL)
      * - 같은 botGroupKey에 ACTIVE 투표가 이미 있으면 CLOSED로 종료 처리
+     * - (PRD) 투표 생성 직후 채팅방 참여자(botUserKey) 목록으로 Participant를 미리 생성합니다.
      */
-    public VoteDtos.VoteSummary create(VoteDtos.CreateVoteReq req, String botGroupKey) {
+    public VoteDtos.VoteSummary createKakaoVote(VoteDtos.CreateVoteReq req, String botGroupKey, List<String> botUserKeys) {
         if (botGroupKey == null || botGroupKey.isBlank()) {
             throw new IllegalArgumentException("botGroupKey must not be blank");
         }

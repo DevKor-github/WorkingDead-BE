@@ -1,5 +1,7 @@
 package com.workingdead.chatbot.kakao.service;
 
+import com.workingdead.chatbot.kakao.client.KakaoChatClient;
+import com.workingdead.chatbot.kakao.client.KakaoChatUser;
 import com.workingdead.chatbot.kakao.dto.KakaoResponse;
 import com.workingdead.meet.dto.VoteDtos.CreateVoteReq;
 import com.workingdead.meet.dto.VoteDtos.VoteSummary;
@@ -36,6 +38,7 @@ public class KakaoWendyService {
     private final Map<String, Long> sessionVoteId = new ConcurrentHashMap<>();
     // 세션 상태 (botGroupKey -> state)
     private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
+    private final KakaoChatClient kakaoChatClient;
 
     public enum SessionState {
         IDLE,
@@ -137,8 +140,23 @@ public class KakaoWendyService {
                 null
         );
 
-        VoteSummary summary = voteService.create(req, botGroupKey);
-        Long voteId = summary.id();
+        // 채팅방 참여자 목록 조회 (botUserKey 리스트)
+        List<String> botUserKeys;
+        try {
+            botUserKeys = kakaoChatClient.fetchChatUsers(botGroupKey).stream()
+                    .map(KakaoChatUser::botUserKey)
+                    .distinct()
+                    .toList();
+        } catch (Exception e) {
+            log.error("[Kakao When:D] Failed to fetch chat members: botGroupKey={}", botGroupKey, e);
+            Map<String, Object> err = new HashMap<>();
+            err.put("botGroupKey", botGroupKey);
+            err.put("state", SessionState.WAITING_WEEKS.name());
+            err.put("error", "채팅방 참여자 목록 조회에 실패했어요. 잠시 후 다시 시도해주세요.");
+            return dataOnly(err);
+        }
+
+        VoteSummary summary = voteService.createKakaoVote(req, botGroupKey, botUserKeys);        Long voteId = summary.id();
 
         // 고정 리다이렉트 링크 (카카오가 botGroupKey/botUserKey/appUserId를 자동 append)
         String redirectUrl = "/open-vote";
@@ -151,6 +169,7 @@ public class KakaoWendyService {
         Map<String, Object> data = new HashMap<>();
         data.put("botGroupKey", botGroupKey);
         data.put("voteId", voteId);
+        data.put("memberCount", botUserKeys.size());
         data.put("redirectUrl", redirectUrl);
         data.put("startDate", startDate.toString());
         data.put("endDate", endDate.toString());

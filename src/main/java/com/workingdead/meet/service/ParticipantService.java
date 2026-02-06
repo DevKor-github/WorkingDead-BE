@@ -85,6 +85,48 @@ public class ParticipantService {
         return new Participant(vote, null, botUserKey);
     }
 
+    /**
+     * (PRD) 투표 생성 직후, 채팅방 참여자(botUserKey) 목록으로 Participant를 미리 생성합니다.
+     * - JPA만 사용합니다.
+     * - 중복 생성 방지: 기존 (voteId, botUserKey) 존재 여부를 먼저 조회한 뒤, 없는 것만 saveAll
+     * - displayName은 이후 웹에서 입력되므로 null로 둡니다.
+     */
+    public int precreateParticipants(Long voteId, List<String> botUserKeys) {
+        if (voteId == null) {
+            throw new IllegalArgumentException("voteId is required");
+        }
+        if (botUserKeys == null || botUserKeys.isEmpty()) {
+            return 0;
+        }
+        // 공백/중복 제거
+        List<String> keys = botUserKeys.stream()
+                .filter(k -> k != null && !k.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+
+        if (keys.isEmpty()) return 0;
+
+        // vote 존재 확인
+        Vote vote = voteRepo.findById(voteId)
+                .orElseThrow(() -> new NoSuchElementException("vote not found"));
+
+        // 이미 존재하는 botUserKey 조회
+        List<String> existingKeys = participantRepo.findBotUserKeysByVoteIdAndBotUserKeyIn(voteId, keys);
+
+        List<Participant> toSave = keys.stream()
+                .filter(k -> existingKeys == null || !existingKeys.contains(k))
+                .map(k -> new Participant(vote, null, k))
+                .toList();
+
+        if (toSave.isEmpty()) return 0;
+
+        participantRepo.saveAll(toSave);
+        return toSave.size();
+    }
+
+
+
 
     public ParticipantDtos.ParticipantRes updateParticipant(Long participantId, ParticipantDtos.UpdateParticipantReq request) {
         Participant participant = participantRepo.findById(participantId)
