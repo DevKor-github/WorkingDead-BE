@@ -6,6 +6,9 @@ import com.workingdead.meet.entity.Vote;
 import com.workingdead.meet.entity.Vote.VoteStatus;
 import com.workingdead.meet.repository.VoteRepository;
 import jakarta.transaction.Transactional;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -156,4 +159,17 @@ public class VoteService {
     private String shareUrl(Vote v) {
         return baseUrl + "/v/" + v.getCode();
     }
+
+    /**
+     * 최후통첩/독촉용 개인화 투표 링크
+     * - botUserKey를 쿼리로 포함하여 웹 진입 시 참여자 식별에 사용
+     */
+    public String shareUrlForUser(Vote v, String botUserKey) {
+        if (botUserKey == null || botUserKey.isBlank()) {
+            throw new IllegalArgumentException("botUserKey must not be blank");
+        }
+        return baseUrl + "/v/" + v.getCode() + "?botUserKey=" + botUserKey;
+    }
+
+
 }

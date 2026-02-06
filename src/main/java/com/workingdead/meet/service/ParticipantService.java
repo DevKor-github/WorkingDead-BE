@@ -151,6 +151,7 @@ public class ParticipantService {
                 .map(p -> new ParticipantDtos.ParticipantStatusRes(
                         p.getId(),
                         p.getDisplayName(),
+                        p.getBotUserKey(),
                         Boolean.TRUE.equals(p.getSubmitted())
                 ))
                 .toList();

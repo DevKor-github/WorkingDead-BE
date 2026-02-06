@@ -283,8 +283,27 @@ public class KakaoResponse {
     }
 
     /**
+     * 단순 텍스트 + 멘션(extra.mentions) 응답 생성
+     * - text에는 buildMentionText("user1") -> "#{mentions.user1}" 형태로 삽입하세요.
+     * - mentions 맵은 key(예: user1) -> botUserKey(value) 로 넣습니다.
+     */
+    public static KakaoResponse simpleTextWithMentions(String text, Map<String, String> mentions) {
+        return KakaoResponse.builder()
+                .version("2.0")
+                .template(Template.builder()
+                        .outputs(List.of(
+                                Output.builder()
+                                        .simpleText(SimpleText.builder().text(text).build())
+                                        .build()
+                        ))
+                        .build())
+                .extra((mentions == null || mentions.isEmpty()) ? null : Extra.builder().mentions(mentions).build())
+                .build();
+    }
+
+    /**
      * 텍스트 + 퀵리플라이 + 멘션(extra.mentions) 응답 생성
-     * text에 #{mentions.key} 형식으로 멘션 삽입 가능
+     * text에는 buildMentionText("user1") -> "#{mentions.user1}" 형식으로 멘션을 삽입합니다.
      */
     public static KakaoResponse textWithQuickRepliesAndMentions(
             String text,

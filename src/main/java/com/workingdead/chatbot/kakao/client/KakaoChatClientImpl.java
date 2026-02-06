@@ -15,9 +15,9 @@ public class KakaoChatClientImpl implements KakaoChatClient {
 
     public KakaoChatClientImpl(
             RestClient.Builder builder,
-            @Value("${kakao.bot.base-url}") String baseUrl,
-            @Value("${kakao.bot.bot-id}") String botId,
-            @Value("${kakao.rest.api-key}") String restApiKey
+            @Value("${kakao.bot-base-url}") String baseUrl,
+            @Value("${kakao.bot-id}") String botId,
+            @Value("${kakao.rest-api-key}") String restApiKey
     ) {
         this.botId = botId;
         this.restClient = builder

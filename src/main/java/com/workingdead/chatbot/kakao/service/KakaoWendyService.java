@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -272,6 +274,52 @@ public class KakaoWendyService {
         }
 
         return textOnly(sb.toString().trim());
+    }
+
+    /**
+     * 최후통첩 문구에 들어갈 '현재 1등 후보' 텍스트를 반환합니다.
+     * - 결과 조회 로직(voteResultService.getVoteResult)을 그대로 재사용합니다.
+     * - 반환 형식: "11/25(화) 점심" 또는 "11/25(화) 저녁"
+     */
+    public String getTopChoiceForFinal(Long voteId) {
+        if (voteId == null) {
+            throw new IllegalArgumentException("voteId must not be null");
+        }
+
+        VoteResultRes res = voteResultService.getVoteResult(voteId);
+        if (res == null || res.rankings() == null || res.rankings().isEmpty()) {
+            // 집계 불가 시 기본 문구(PRD에서 요구하는 형태로 대체 가능)
+            return "00/00(월) 점심/저녁";
+        }
+
+        // rankings는 이미 rank 기준으로 정렬되어 온다고 가정하지만, 안전하게 1순위를 한 번 더 보장
+        RankingRes r1 = res.rankings().stream()
+                .filter(r -> r.rank() != null)
+                .min(Comparator.comparingInt(RankingRes::rank))
+                .orElse(res.rankings().get(0));
+
+        String periodLabel = "LUNCH".equalsIgnoreCase(r1.period()) ? "점심" : "저녁";
+        String dateText = (r1.date() == null) ? "00/00(월)" : String.valueOf(r1.date());
+        return dateText + " " + periodLabel;
+    }
+
+    /**
+     * PRD 2.4 최후통첩 메시지(링크 제외)를 동적으로 조립합니다.
+     * - deadline: 최후통첩 발송 시각 기준 + 60분
+     * - 확정 대상: 현재 1등 후보(날짜 + 점심/저녁)
+     */
+    public String buildFinalUltimatumMessage(Long voteId) {
+        LocalDateTime deadline = LocalDateTime.now().plusMinutes(60);
+        String deadlineText = deadline.format(DateTimeFormatter.ofPattern("HH:mm"));
+        String topChoice = getTopChoiceForFinal(voteId);
+
+        return "스케쥴리도 이제 한계다. 그냥 투표하지 마라. 바쁘다 탓, 정신없다 탓하지 마라. 나도 충분히 기다려줬다.\n\n" +
+                "나나 너나 현생 살기 바쁘고 연락 하나 하는 것도 에너지 써야 하는 힘든 시절인 거 안다. 그래서 이번 약속만큼은 우리끼리라도 즐겁게 시간 보내자고 제안했던 거다. 너에게 언제나 최고의 장소는 아니더라도 최선의 맛집을 찾아주고 싶었다.\n\n" +
+                "내가 업무에 치이고 잠 줄여가며 네 답장 기다리고, 식당 예약 알아보고, 일정 조율하는 거, 이거 다 우리 좋은 시간 보내게 해주고 싶어서였다. 네가 읽씹하거나 답장이 늦을 때도, 겉으로는 \"바쁜가 보다\" 했지만 뒤에서는 '내가 너무 보채나' 하며 휴대폰만 만지작거렸다. 그래도 우리 만나면 즐겁겠지, 만나서 회포 풀면 스트레스 풀리겠지. 이 생각만 하며 꾹 참으며 며칠을 보냈다.\n\n" +
+                "그런데 이게 뭐냐? 너 지금 투표 올라온 지 몇 시간인지 알긴 하냐? 도대체 그 나이에 약속 하나 확답하는 게 그렇게 힘든 일이란 말이냐? 늘 만나자고는 말만 하면서 정작 실천하는 게 뭐냔 말이다.\n\n" +
+                "오늘 문득 너랑 약속 잡으려고 안달 난 내가 잘못했다는 생각이 든다. 거울 속 핸드폰만 붙잡고 있는 내 모습에 눈물이 나더라. 그냥... 이제 투표하지 마라. 나를 원망하지도 말고 네 스케줄대로 알아서 살아라. 나도 지쳤다. 당장 톡방을 나가라.\n\n" +
+                "📩 최후통첩\n\n" +
+                deadlineText + "까지 투표 불참 시, " + topChoice + "으로 확정할게요!😤";
     }
 
     /**

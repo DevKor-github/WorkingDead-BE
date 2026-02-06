@@ -11,6 +11,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.workingdead.meet.dto.ParticipantDtos.ParticipantStatusRes;
+import com.workingdead.meet.service.ParticipantService;
+
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 카카오 i 오픈빌더 스킬 서버 컨트롤러
@@ -27,6 +32,7 @@ public class KakaoSkillController {
 
     private final KakaoWendyService kakaoWendyService;
     private final ObjectMapper objectMapper;
+    private final ParticipantService participantService;
 
 
     /**
@@ -253,6 +259,120 @@ public class KakaoSkillController {
     @PostMapping("/help")
     public ResponseEntity<KakaoResponse> handleHelp(@RequestBody KakaoRequest request) {
         return ResponseEntity.ok(kakaoWendyService.help());
+    }
+
+    /**
+     * 독촉 스킬 (이벤트 API로 트리거되는 전용 블록)
+     * - Event API data로 voteId, timing(NUDGE_30M/NUDGE_2H/...)을 전달받아
+     *   스킬 응답에서 멘션 + 고정 문구(simpleText)를 생성합니다.
+     */
+    @Operation(summary = "독촉 (이벤트 트리거)")
+    @PostMapping("/notify/remind")
+    public ResponseEntity<KakaoResponse> handleRemind(@RequestBody KakaoRequest request) {
+        Long voteId = parseLongParam(request.getParam("voteId"));
+        String timing = safe(request.getParam("timing"));
+
+        if (voteId == null) {
+            return ResponseEntity.ok(KakaoResponse.simpleText("voteId가 없어 독촉 메시지를 만들 수 없어요."));
+        }
+
+        // 미투표자 botUserKey 목록 조회
+        List<ParticipantStatusRes> statuses = participantService.getParticipantStatusByVoteId(voteId);
+        List<String> nonVoterKeys = statuses.stream()
+                .filter(s -> !Boolean.TRUE.equals(s.submitted()))
+                .map(ParticipantStatusRes::botUserKey)
+                .filter(Objects::nonNull)
+                .filter(k -> !k.isBlank())
+                .collect(Collectors.toList());
+
+        if (nonVoterKeys.isEmpty()) {
+            return ResponseEntity.ok(KakaoResponse.simpleText("이미 모두 투표를 완료했어요! :D"));
+        }
+
+        String message = buildRemindMessage(timing);
+        return ResponseEntity.ok(buildMentionSimpleText(nonVoterKeys, message));
+    }
+
+    /**
+     * 최후통첩 스킬 (이벤트 API로 트리거되는 전용 블록)
+     */
+    @Operation(summary = "최후통첩 (이벤트 트리거)")
+    @PostMapping("/notify/final")
+    public ResponseEntity<KakaoResponse> handleFinal(@RequestBody KakaoRequest request) {
+        Long voteId = parseLongParam(request.getParam("voteId"));
+
+        if (voteId == null) {
+            return ResponseEntity.ok(KakaoResponse.simpleText("voteId가 없어 최후통첩 메시지를 만들 수 없어요."));
+        }
+
+        List<ParticipantStatusRes> statuses = participantService.getParticipantStatusByVoteId(voteId);
+        List<String> nonVoterKeys = statuses.stream()
+                .filter(s -> !Boolean.TRUE.equals(s.submitted()))
+                .map(ParticipantStatusRes::botUserKey)
+                .filter(Objects::nonNull)
+                .filter(k -> !k.isBlank())
+                .collect(Collectors.toList());
+
+        if (nonVoterKeys.isEmpty()) {
+            return ResponseEntity.ok(KakaoResponse.simpleText("이미 모두 투표를 완료했어요! :D"));
+        }
+
+        // PRD 2.4 최후통첩 메시지 동적 조립 (링크 제외)
+        String message = kakaoWendyService.buildFinalUltimatumMessage(voteId);
+
+        return ResponseEntity.ok(buildMentionSimpleText(nonVoterKeys, message));
+    }
+
+    /**
+     * 멘션 + simpleText 응답 생성
+     * - text 본문에는 #{mentions.user1} 형태의 플레이스홀더를 넣고
+     * - extra.mentions에 key(user1) -> botUserKey 값을 매핑합니다.
+     */
+    private KakaoResponse buildMentionSimpleText(List<String> botUserKeys, String message) {
+        // 카카오 멘션은 너무 길면 UX가 깨지므로 상한을 둡니다(필요 시 조정)
+        int limit = Math.min(botUserKeys.size(), 10);
+
+        Map<String, String> mentions = new LinkedHashMap<>();
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = 0; i < limit; i++) {
+            String key = "user" + (i + 1);
+            mentions.put(key, botUserKeys.get(i));
+            // KakaoResponse 규약: #{mentions.key}
+            sb.append(KakaoResponse.buildMentionText(key)).append(" ");
+        }
+
+        sb.append("\n\n");
+        sb.append(message);
+
+        return KakaoResponse.simpleTextWithMentions(sb.toString().trim(), mentions);
+    }
+
+    private String buildRemindMessage(String timing) {
+        // timing 값은 NotificationType.name() (예: NUDGE_30M)
+        if (timing == null) {
+            return "투표가 시작됐어요! 다른 분들을 위해 빠른 참여 부탁드려요 :D";
+        }
+        return switch (timing) {
+            case "NUDGE_30M" -> "투표가 시작됐어요! 다른 분들을 위해 빠른 참여 부탁드려요 :D";
+            case "NUDGE_2H" -> "투표가 시작됐어요! 다른 분들을 위해 빠른 참여 부탁드려요 :D";
+            case "NUDGE_6H" -> "다들 투표를 기다리고 있어요🤔";
+            case "NUDGE_12H" -> "웬디 기다리다 지쳐버림....🥺 혹시 대머리신가요....?";
+            default -> "투표가 시작됐어요! 다른 분들을 위해 빠른 참여 부탁드려요 :D";
+        };
+    }
+
+    private static Long parseLongParam(String raw) {
+        try {
+            if (raw == null || raw.isBlank()) return null;
+            return Long.parseLong(raw.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String safe(String s) {
+        return (s == null) ? null : s.trim();
     }
 
     /**
