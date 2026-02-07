@@ -43,19 +43,18 @@ public class ParticipantController {
     // 0.2 참여자 추가/삭제
     @Operation(
             summary = "참여자 추가",
-            description = "특정 투표에 새로운 참여자를 추가합니다. displayName을 기반으로 참여자 칩이 생성됩니다."
-    )
+            description = "PRD: 카카오가 전달한 botUserKey(voteUserKey)로 참여자를 식별합니다. 해당 voteId에 (botUserKey) 참가자가 없으면 생성하고, displayName은 웹에서 사용자가 입력하는 값이라 비어 있을 수 있으며 전달되면 저장/갱신합니다."    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "참여자 추가 성공",
                     content = @Content(schema = @Schema(implementation = ParticipantDtos.ParticipantRes.class))),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 (displayName이 비어있는 경우)", content = @Content),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청 (botUserKey가 비어있는 경우)", content = @Content),
             @ApiResponse(responseCode = "404", description = "투표를 찾을 수 없음", content = @Content)
     })
     @PostMapping("/votes/{voteId}/participants")
     public ResponseEntity<ParticipantDtos.ParticipantRes> add(
-            @PathVariable Long voteId, 
-            @RequestBody @Valid ParticipantDtos.CreateParticipantReq req) {
-        var res = participantService.add(voteId, req.displayName());
+            @PathVariable Long voteId,
+            @RequestBody ParticipantDtos.CreateParticipantReq req) {
+        var res = participantService.add(voteId, req.botUserKey(), req.displayName());
         return ResponseEntity.ok(res);
     }
 

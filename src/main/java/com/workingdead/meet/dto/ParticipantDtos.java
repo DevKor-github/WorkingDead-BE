@@ -7,14 +7,16 @@ import java.util.List;
 
 
 public class ParticipantDtos {
-    public record CreateParticipantReq(@NotBlank String displayName) {}
+    public record CreateParticipantReq(@NotBlank String botUserKey, String displayName) {}
     public record UpdateParticipantReq(String displayName) {}
     public record ParticipantRes(Long id, String displayName, boolean loggedIn // 로그인 상태
         ) {}
 
-    // 단순 상태 조회용 DTO (투표 여부 판단 전용)
+    // 단순 상태 조회용 DTO (투표 여부 판단/멘션 전용)
+    // - voteUserKey: 카카오 botUserKey(=vote_user_key 컬럼) 값
     public record ParticipantStatusRes(
             Long id,
+            String botUserKey,
             String displayName,
             boolean submitted
     ) {}

@@ -29,6 +29,15 @@ public class KakaoRequest {
     public static class Chat {
         private String id;      // 채팅방 ID (botGroupKey)
         private String type;    // 채팅방 타입
+        private ChatProperties properties;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ChatProperties {
+        private String botGroupKey;
     }
 
     @Getter
@@ -51,6 +60,7 @@ public class KakaoRequest {
         private String utterance;
         private String lang;
         private User user;
+        private Chat chat;
     }
 
     @Getter
@@ -80,6 +90,7 @@ public class KakaoRequest {
         private String plusfriendUserKey;
         private String appUserId;
         private Boolean isFriend;
+        private String botUserKey;
     }
 
     @Getter
@@ -152,10 +163,26 @@ public class KakaoRequest {
 
     /**
      * 그룹 채팅방 키 (botGroupKey) 조회
+     * - 카카오 요청에서는 userRequest.chat.id 가 botGroupKey로 사용 가능하며,
+     *   userRequest.chat.properties.botGroupKey 로도 전달됩니다.
      */
     public String getBotGroupKey() {
+        // 1) userRequest.chat.id (요청에 기본 포함)
+        if (userRequest != null && userRequest.getChat() != null) {
+            String id = userRequest.getChat().getId();
+            if (id != null && !id.isBlank()) return id;
+
+            // 2) userRequest.chat.properties.botGroupKey
+            if (userRequest.getChat().getProperties() != null) {
+                String key = userRequest.getChat().getProperties().getBotGroupKey();
+                if (key != null && !key.isBlank()) return key;
+            }
+        }
+
+        // 3) 호환: 최상위 chat.id (현재 JSON에는 없지만 혹시 몰라 유지)
         if (chat != null) {
-            return chat.getId();
+            String id = chat.getId();
+            if (id != null && !id.isBlank()) return id;
         }
         return null;
     }
@@ -164,16 +191,22 @@ public class KakaoRequest {
      * 그룹 채팅방 여부 확인
      */
     public boolean isGroupChat() {
-        return chat != null && chat.getId() != null;
+        String key = getBotGroupKey();
+        return key != null && !key.isBlank();
     }
 
     /**
      * 그룹챗 사용자 식별용 botUserKey
-     * - PRD 기준: 멘션/참석자 식별 키로 사용
-     * - 현재 구조에서는 user.id를 사용
+     * - 카카오 요청에서는 userRequest.user.properties.botUserKey 로 전달됩니다.
+     * - fallback: userRequest.user.id
      */
     public String getBotUserKey() {
         if (userRequest != null && userRequest.getUser() != null) {
+            Properties p = userRequest.getUser().getProperties();
+            if (p != null) {
+                String key = p.getBotUserKey();
+                if (key != null && !key.isBlank()) return key;
+            }
             String id = userRequest.getUser().getId();
             return (id == null || id.isBlank()) ? null : id;
         }

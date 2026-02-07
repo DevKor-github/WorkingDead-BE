@@ -20,6 +20,13 @@ public class Vote {
     @Column(unique = true, nullable = false, updatable = false)
     private String code; // 공유용 짧은 코드 (링크)
 
+    @Column(nullable = false)
+    private String botGroupKey; // 카카오톡 채팅방 ID
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private VoteStatus status  = VoteStatus.ACTIVE;
+
     private LocalDate startDate; // 선택 범위 시작
     private LocalDate endDate; // 선택 범위 끝
 
@@ -37,4 +44,14 @@ public class Vote {
 
     // getters/setters
     public void setDateRange(LocalDate start, LocalDate end) { this.startDate = start; this.endDate = end; }
+
+
+    public enum VoteStatus {
+        ACTIVE,
+        CLOSED
+    }
+
+    public void close() {
+        this.status = VoteStatus.CLOSED;
+    }
 }

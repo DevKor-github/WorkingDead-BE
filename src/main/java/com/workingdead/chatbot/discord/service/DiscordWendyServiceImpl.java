@@ -101,7 +101,7 @@ public class DiscordWendyServiceImpl implements DiscordWendyService {
             return;
         }
 
-        ParticipantRes pRes = participantService.add(voteId, memberName);
+        ParticipantRes pRes = participantService.add(voteId, null, memberName);
         System.out.println("[Discord When:D] Participant added AFTER vote: " + memberName
                 + " (discordId=" + memberId + ", participantId=" + pRes.id() + ")");
     }
