@@ -19,6 +19,9 @@ public class RedirectController {
 
     private final VoteService voteService;
 
+    @org.springframework.beans.factory.annotation.Value("${whend.frontend-base-url}")
+    private String frontendBaseUrl;
+
     /**
      * 카카오 챗봇 버튼 클릭 시 호출되는 리다이렉트 엔드포인트
      * - botGroupKey(채팅방 ID)를 기준으로 활성 투표를 조회
@@ -33,7 +36,7 @@ public class RedirectController {
         Vote vote = voteService.findActiveVoteByBotGroupKey(botGroupKey);
 
         // 2) 웹으로 redirect (web 라우트: /{shareCode})
-        URI target = URI.create("https://whendy.netlify.app/" + vote.getCode()
+        URI target = URI.create(frontendBaseUrl + "/" + vote.getCode()
                 + "?botUserKey=" + URLEncoder.encode(botUserKey, UTF_8)
         );
         return ResponseEntity.status(302).location(target).build();
