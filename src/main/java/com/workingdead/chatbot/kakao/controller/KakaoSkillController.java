@@ -376,6 +376,31 @@ public class KakaoSkillController {
     }
 
     /**
+     * 투표 완료 스킬 (이벤트 API로 트리거되는 전용 블록)
+     * - done_all_voted 이벤트 또는 "저도 그날 좋아요!" 버튼 클릭 시 호출
+     * - 투표 결과 1~3순위 + 퀵리플라이(좋아요/재투표/종료) 반환
+     */
+    @Operation(summary = "투표 완료 (이벤트 트리거)")
+    @PostMapping("/notify/done")
+    public ResponseEntity<KakaoResponse> handleDone(@RequestBody KakaoRequest request) {
+        Long voteId = parseLongParam(request.getParam("voteId"));
+
+        if (voteId == null) {
+            return ResponseEntity.ok(KakaoResponse.simpleText("voteId가 없어 완료 메시지를 만들 수 없어요."));
+        }
+
+        String message = kakaoWendyService.buildVoteCompletionMessage(voteId);
+
+        List<KakaoResponse.QuickReply> quickReplies = List.of(
+                KakaoResponse.quickReply("좋아요", "좋아요"),
+                KakaoResponse.quickReply("재투표할래요", "웬디 재투표"),
+                KakaoResponse.quickReply("종료할게요", "웬디 종료")
+        );
+
+        return ResponseEntity.ok(KakaoResponse.textWithQuickReplies(message, quickReplies));
+    }
+
+    /**
      * 헬스체크 (카카오 스킬 서버 상태 확인용)
      */
     @Operation(summary = "헬스체크")

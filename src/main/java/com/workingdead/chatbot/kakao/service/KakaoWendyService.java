@@ -374,6 +374,52 @@ public class KakaoWendyService {
         return sessionVoteId.get(botGroupKey);
     }
 
+    // ========== 투표 완료 (PRD 2.5) ==========
+
+    /**
+     * 투표 완료 메시지 빌드
+     * - 상위 3순위 결과 + 투표자 목록 포맷팅
+     */
+    public String buildVoteCompletionMessage(Long voteId) {
+        VoteResultRes result = voteResultService.getVoteResult(voteId);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("투표가 완료됐어요! :D\n");
+
+        if (result != null && result.rankings() != null && !result.rankings().isEmpty()) {
+            List<RankingRes> top3 = result.rankings().stream()
+                    .filter(r -> r.rank() != null && r.rank() >= 1 && r.rank() <= 3)
+                    .sorted(Comparator.comparingInt(RankingRes::rank))
+                    .toList();
+
+            for (RankingRes rank : top3) {
+                String periodLabel = "LUNCH".equalsIgnoreCase(rank.period()) ? "점심" : "저녁";
+                String dateText = formatDateKorean(rank.date());
+
+                sb.append("\n📌").append(rank.rank()).append("순위 ")
+                        .append(dateText).append(" ").append(periodLabel).append("\n");
+
+                if (rank.voters() != null && !rank.voters().isEmpty()) {
+                    String voterStr = rank.voters().stream()
+                            .map(v -> v.participantName()
+                                    + (v.priorityIndex() != null ? "(" + v.priorityIndex() + ")" : ""))
+                            .collect(Collectors.joining(", "));
+                    sb.append("투표자: ").append(voterStr).append("\n");
+                }
+            }
+        }
+
+        sb.append("\n이제 몇 시에 만날지 정해볼까요?🙂");
+        return sb.toString();
+    }
+
+    private String formatDateKorean(LocalDate date) {
+        if (date == null) return "??/??(?)";
+        String[] dayNames = {"월", "화", "수", "목", "금", "토", "일"};
+        String dayOfWeek = dayNames[date.getDayOfWeek().getValue() - 1];
+        return date.getMonthValue() + "/" + date.getDayOfMonth() + "(" + dayOfWeek + ")";
+    }
+
     // ========== 헬퍼 메서드 ==========
 
     private KakaoResponse dataOnly(Map<String, Object> data) {
