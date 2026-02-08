@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/kakao-api
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -60,6 +61,8 @@ jobs:
             
             export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
             export DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}'
+            export KAKAO_REST_API_KEY='${{ secrets.KAKAO_REST_API_KEY }}'
+            export KAKAO_EVENT_API_KEY='${{ secrets.KAKAO_EVENT_API_KEY }}'
             
             nohup java -jar build/libs/workingdead-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
           

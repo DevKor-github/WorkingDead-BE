@@ -4,13 +4,12 @@ import com.workingdead.meet.dto.*;
 import com.workingdead.meet.entity.*;
 import com.workingdead.meet.repository.*;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.util.NoSuchElementException;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 import org.springframework.web.server.ResponseStatusException;
@@ -24,8 +23,6 @@ public class ParticipantService {
     private final VoteRepository voteRepo;
     private final ParticipantSelectionRepository selectionRepo;      // 추가!
     private final PriorityPreferenceRepository priorityRepo;         // 추가!
-    private static final String CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
-    private final SecureRandom rnd = new SecureRandom();
 
     // 생성자 수정
     public ParticipantService(
@@ -39,13 +36,97 @@ public class ParticipantService {
         this.priorityRepo = priorityRepo;                            // 추가!
     }
 
-    public ParticipantDtos.ParticipantRes add(Long voteId, String displayName) {
-        Vote v = voteRepo.findById(voteId)
-                        .orElseThrow(() -> new NoSuchElementException("vote not found"));
-        Participant p = new Participant(v, displayName);
-        participantRepo.save(p);
-        return new ParticipantDtos.ParticipantRes(p.getId(), p.getDisplayName(), false);
+    /**
+     * (PRD) 참가자 upsert
+     * - 식별은 (voteId, botUserKey)
+     * - displayName은 웹에서 사용자가 입력하므로 처음에는 비어 있을 수 있음
+     */
+    public ParticipantDtos.ParticipantRes add(Long voteId, String botUserKey, String displayName) {
+        Participant participant = getOrCreateByVoteAndBotUserKey(voteId, botUserKey);
+
+        // displayName은 웹에서 입력/수정될 수 있으므로, 값이 들어오면 항상 최신으로 반영합니다.
+        if (displayName != null && !displayName.isBlank()) {
+            String trimmed = displayName.trim();
+            if (!Objects.equals(trimmed, participant.getDisplayName())) {
+                participant.setDisplayName(trimmed);
+            }
+        }
+
+        Participant saved = participantRepo.save(participant);
+        return new ParticipantDtos.ParticipantRes(
+                saved.getId(),
+                saved.getDisplayName(),
+                Boolean.TRUE.equals(saved.getSubmitted())
+        );
     }
+
+    /**
+     * (voteId, botUserKey)로 Participant 확보
+     * - 없으면 생성하며, displayName은 이후 웹에서 업데이트될 수 있음
+     */
+    private Participant getOrCreateByVoteAndBotUserKey(Long voteId, String botUserKey) {
+
+        if (voteId == null) {
+            throw new IllegalArgumentException("voteId is required");
+        }
+
+        if (botUserKey == null || botUserKey.isBlank()) {
+            throw new IllegalArgumentException("botUserKey is required");
+        }
+
+        Optional<Participant> existing = participantRepo.findByVoteIdAndBotUserKey(voteId, botUserKey);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        Vote vote = voteRepo.findById(voteId)
+                .orElseThrow(() -> new NoSuchElementException("vote not found"));
+
+        return new Participant(vote, null, botUserKey);
+    }
+
+    /**
+     * (PRD) 투표 생성 직후, 채팅방 참여자(botUserKey) 목록으로 Participant를 미리 생성합니다.
+     * - JPA만 사용합니다.
+     * - 중복 생성 방지: 기존 (voteId, botUserKey) 존재 여부를 먼저 조회한 뒤, 없는 것만 saveAll
+     * - displayName은 이후 웹에서 입력되므로 null로 둡니다.
+     */
+    public int precreateParticipants(Long voteId, List<String> botUserKeys) {
+        if (voteId == null) {
+            throw new IllegalArgumentException("voteId is required");
+        }
+        if (botUserKeys == null || botUserKeys.isEmpty()) {
+            return 0;
+        }
+        // 공백/중복 제거
+        List<String> keys = botUserKeys.stream()
+                .filter(k -> k != null && !k.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+
+        if (keys.isEmpty()) return 0;
+
+        // vote 존재 확인
+        Vote vote = voteRepo.findById(voteId)
+                .orElseThrow(() -> new NoSuchElementException("vote not found"));
+
+        // 이미 존재하는 botUserKey 조회
+        List<String> existingKeys = participantRepo.findBotUserKeysByVoteIdAndBotUserKeyIn(voteId, keys);
+
+        List<Participant> toSave = keys.stream()
+                .filter(k -> existingKeys == null || !existingKeys.contains(k))
+                .map(k -> new Participant(vote, null, k))
+                .toList();
+
+        if (toSave.isEmpty()) return 0;
+
+        participantRepo.saveAll(toSave);
+        return toSave.size();
+    }
+
+
+
 
     public ParticipantDtos.ParticipantRes updateParticipant(Long participantId, ParticipantDtos.UpdateParticipantReq request) {
         Participant participant = participantRepo.findById(participantId)
@@ -61,7 +142,7 @@ public class ParticipantService {
         return new ParticipantDtos.ParticipantRes(
                 saved.getId(),
                 saved.getDisplayName(),
-                false
+                Boolean.TRUE.equals(saved.getSubmitted())
         );
     }
 
@@ -70,6 +151,7 @@ public class ParticipantService {
                 .map(p -> new ParticipantDtos.ParticipantStatusRes(
                         p.getId(),
                         p.getDisplayName(),
+                        p.getBotUserKey(),
                         Boolean.TRUE.equals(p.getSubmitted())
                 ))
                 .toList();
@@ -104,7 +186,7 @@ public class ParticipantService {
                 .map(p -> new ParticipantDtos.ParticipantRes(
                         p.getId(),
                         p.getDisplayName(),
-                        false 
+                        Boolean.TRUE.equals(p.getSubmitted())
                 ))
                 .collect(Collectors.toList());
     }
@@ -200,12 +282,6 @@ public class ParticipantService {
                 saved.getSubmittedAt(),
                 saved.getSubmitted()
         );
-    }
-    
-    private String genCode(int len) {
-        StringBuilder sb = new StringBuilder(len);
-        for (int i=0;i<len;i++) sb.append(CODE_ALPHABET.charAt(rnd.nextInt(CODE_ALPHABET.length())));
-        return sb.toString();
     }
 
     /**

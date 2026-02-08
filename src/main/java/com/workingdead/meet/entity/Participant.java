@@ -13,8 +13,15 @@ import java.util.List;
 @AllArgsConstructor 
 @Builder
 @Entity
-@Table(name = "participant")
-public class Participant {
+@Table(
+        name = "participant",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_participant_vote_bot_user",
+                        columnNames = {"vote_id", "bot_user_key"}
+                )
+        }
+)public class Participant {
     
     @Id 
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -24,13 +31,16 @@ public class Participant {
     @JoinColumn(name = "vote_id", nullable = false)
     private Vote vote;
 
-    @Column(name = "display_name", nullable = false)
+    @Column(name = "display_name")
     private String displayName;
+
+    @Column(name = "bot_user_key", nullable = false)
+    private String botUserKey;
 
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
     
-    private Boolean submitted;
+    private Boolean submitted = false;
     
     // 일정 선택 정보
     @OneToMany(mappedBy = "participant", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -43,8 +53,9 @@ public class Participant {
     private List<PriorityPreference> priorities = new ArrayList<>();
     
     // 편의 생성자
-    public Participant(Vote vote, String displayName) {
+    public Participant(Vote vote, String displayName, String botUserKey) {
         this.vote = vote;
         this.displayName = displayName;
+        this.botUserKey = botUserKey;
     }
 }
