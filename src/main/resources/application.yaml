@@ -73,3 +73,6 @@ kakao:
   bot-base-url: ${KAKAO_BOT_BASE_URL:}
   channel-id: ${KAKAO_CHANNEL_ID:}
   bot-id: ${KAKAO_BOT_ID:}
+
+whend:
+  frontend-base-url: https://whendy.netlify.app
